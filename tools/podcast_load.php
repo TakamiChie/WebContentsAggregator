@@ -24,9 +24,9 @@ function main(array $argv): void
     if ($options['sql_output'] === null) {
       fwrite(STDOUT, $sql);
     } elseif (file_put_contents($options['sql_output'], $sql) === false) {
-      fail("SQLファイルの書き込みに失敗しました: {$options['sql_output']}");
+      fail("Failed to write SQL file: {$options['sql_output']}");
     } else {
-      fwrite(STDERR, "SQLファイルを生成しました: {$options['sql_output']}\n");
+      fwrite(STDERR, "SQL file generated: {$options['sql_output']}\n");
     }
     return;
   }
@@ -36,7 +36,7 @@ function main(array $argv): void
   fwrite(
     STDERR,
     sprintf(
-      "%d件のエピソードをSQLiteへ書き込みました: %s\n",
+      "%d episodes written to SQLite: %s\n",
       count($podcast['episodes']),
       $options['database']
     )
@@ -62,26 +62,26 @@ function parseArguments(array $argv): array
       $options['mode'] = setMode($options['mode'], 'sql');
       $options['sql_output'] = substr($arg, strlen('--sql-output='));
       if ($options['sql_output'] === '') {
-        usage('--sql-outputには出力先を指定してください');
+        usage('Specify an output path for --sql-output');
       }
     } elseif (str_starts_with($arg, '--database=')) {
       $options['database'] = substr($arg, strlen('--database='));
       if ($options['database'] === '') {
-        usage('--databaseにはSQLiteファイルを指定してください');
+        usage('Specify a SQLite file for --database');
       }
     } elseif (str_starts_with($arg, '--limit=')) {
       $options['limit'] = substr($arg, strlen('--limit='));
     } elseif ($arg === '--help' || $arg === '-h') {
       usage(null, 0);
     } elseif (str_starts_with($arg, '--')) {
-      usage("不明なオプションです: {$arg}");
+      usage("Unknown option: {$arg}");
     } else {
       $positionals[] = $arg;
     }
   }
 
   if (count($positionals) !== 2) {
-    usage('source_idとRSS URLを指定してください');
+    usage('Specify source_id and RSS URL');
   }
 
   $options['source_id'] = $positionals[0];
@@ -93,7 +93,7 @@ function parseArguments(array $argv): array
 function setMode(string $current, string $new): string
 {
   if ($current !== 'write' && $current !== $new) {
-    usage('--dry-runと--sqlは同時に指定できません');
+    usage('--dry-run and --sql cannot be used together');
   }
   return $new;
 }
@@ -101,22 +101,22 @@ function setMode(string $current, string $new): string
 function usage(?string $error = null, int $exitCode = 2): never
 {
   if ($error !== null) {
-    fwrite(STDERR, "エラー: {$error}\n\n");
+    fwrite(STDERR, "Error: {$error}\n\n");
   }
 
   fwrite(
     $exitCode === 0 ? STDOUT : STDERR,
     <<<TEXT
-使用方法:
-  php tools/podcast_load.php <source_id> <rss_url> [オプション]
+Usage:
+  php tools/podcast_load.php <source_id> <rss_url> [options]
 
-オプション:
-  --database=<file>   SQLiteファイル（既定: user/data/mediadata.sqlite3）
-  --limit=<days>      過去何日分を読むか。unlimitedも指定可能（既定: 60）
-  --dry-run           JSONを標準出力し、SQLiteへは書き込まない
-  --sql               等価なSQLを標準出力し、SQLiteへは書き込まない
-  --sql-output=<file> 等価なSQLをファイルへ出力し、SQLiteへは書き込まない
-  -h, --help          このヘルプを表示
+Options:
+  --database=<file>   SQLite file (default: user/data/mediadata.sqlite3)
+  --limit=<days>      Read this many days, or unlimited (default: 60)
+  --dry-run           Print JSON to stdout without writing to SQLite
+  --sql               Print SQL to stdout without writing to SQLite
+  --sql-output=<file> Write SQL to file without writing to SQLite
+  -h, --help          Show this help
 
 TEXT
   );
@@ -129,7 +129,7 @@ function parseLimitDate(string $limitArg): ?DateTimeImmutable
     return null;
   }
   if (!ctype_digit($limitArg)) {
-    usage('limitは0以上の整数またはunlimitedで指定してください');
+    usage('limit must be a non-negative integer or unlimited');
   }
 
   return (new DateTimeImmutable('now', new DateTimeZone('UTC')))
@@ -141,7 +141,7 @@ function loadFeedXml(string $url): SimpleXMLElement
   libxml_use_internal_errors(true);
   $xmlString = @file_get_contents($url);
   if ($xmlString === false) {
-    fail("RSS取得に失敗しました: {$url}");
+    fail("Failed to fetch RSS feed: {$url}");
   }
 
   $xml = simplexml_load_string($xmlString);
@@ -151,7 +151,7 @@ function loadFeedXml(string $url): SimpleXMLElement
       libxml_get_errors()
     );
     libxml_clear_errors();
-    fail("XML解析に失敗しました\n" . implode("\n", $messages));
+    fail("Failed to parse XML\n" . implode("\n", $messages));
   }
 
   return $xml;
@@ -165,7 +165,7 @@ function readPodcast(
 ): array {
   $channel = $feedXml->channel ?? null;
   if ($channel === null) {
-    fail('RSSのchannel要素が見つかりませんでした');
+    fail('RSS channel element not found');
   }
 
   $podcast = [
@@ -231,12 +231,12 @@ function getContentId(SimpleXMLElement $item, string $sourceId, string $url): st
 function writePodcastToDatabase(string $databaseFile, array $podcast): void
 {
   if (!extension_loaded('pdo_sqlite')) {
-    fail('PDO SQLite拡張が利用できません。php.iniでpdo_sqliteを有効にしてください');
+    fail('PDO SQLite is unavailable. Enable pdo_sqlite in php.ini');
   }
 
   $directory = dirname($databaseFile);
   if (!is_dir($directory)) {
-    fail("SQLiteファイルの保存先ディレクトリがありません: {$directory}");
+    fail("SQLite output directory does not exist: {$directory}");
   }
 
   try {
@@ -261,7 +261,7 @@ function writePodcastToDatabase(string $databaseFile, array $podcast): void
     if (isset($pdo) && $pdo->inTransaction()) {
       $pdo->rollBack();
     }
-    fail('SQLiteへの書き込みに失敗しました: ' . $error->getMessage());
+    fail('Failed to write to SQLite: ' . $error->getMessage());
   }
 }
 
@@ -273,7 +273,7 @@ function assertSchema(PDO $pdo): void
     );
     $statement->execute([':name' => $table]);
     if ($statement->fetchColumn() === false) {
-      throw new RuntimeException("必要なテーブルがありません: {$table}");
+      throw new RuntimeException("Required table is missing: {$table}");
     }
   }
 }
@@ -348,7 +348,7 @@ function outputJson(array $podcast): void
     JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES
   );
   if ($json === false) {
-    fail('JSON変換に失敗しました: ' . json_last_error_msg());
+    fail('Failed to encode JSON: ' . json_last_error_msg());
   }
   fwrite(STDOUT, $json . PHP_EOL);
 }

@@ -23,20 +23,20 @@ function transcriptMain(array $argv): int
   $database = null;
   foreach (array_slice($argv, 1) as $arg) {
     if ($arg === '--help' || $arg === '-h') {
-      fwrite(STDOUT, "Usage: php get_transcript.php [--database=/path/to/mediadata.sqlite3]\nDB: setting.json の OUTPUT_PATH（存在しない場合は settings.json）\n");
+      fwrite(STDOUT, "Usage: php get_transcript.php [--database=/path/to/mediadata.sqlite3]\nDB: OUTPUT_PATH in setting.json (fallback: settings.json)\n");
       return 0;
     }
     if (!str_starts_with($arg, '--database=') || substr($arg, 11) === '') {
-      throw new InvalidArgumentException("不正な引数です: {$arg}");
+      throw new InvalidArgumentException("Invalid argument: {$arg}");
     }
     $database = substr($arg, 11);
   }
   $database ??= transcriptDatabasePath(__DIR__);
   if (!is_file($database)) {
-    throw new RuntimeException("既存のSQLiteファイルを指定してください: {$database}");
+    throw new RuntimeException("SQLite database file does not exist: {$database}");
   }
   if (!extension_loaded('curl')) {
-    throw new RuntimeException('PHPのcurl拡張が必要です');
+    throw new RuntimeException('The PHP curl extension is required');
   }
   $db = new PDO('sqlite:' . $database, null, null, [
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -44,7 +44,7 @@ function transcriptMain(array $argv): int
   ]);
   $columns = $db->query('PRAGMA table_info(ARTICLE)')->fetchAll(PDO::FETCH_COLUMN, 1);
   if (!in_array('transcript_vtt', $columns, true)) {
-    throw new RuntimeException('ARTICLE.transcript_vtt (TEXT NULL DEFAULT NULL)を先に追加してください。DB構造は変更しません。');
+    throw new RuntimeException('Required column missing: ARTICLE.transcript_vtt (TEXT NULL DEFAULT NULL). Add it before running this script.');
   }
   return collectTranscripts($db, 'downloadTranscript');
 }
@@ -58,12 +58,12 @@ function transcriptDatabasePath(string $directory): string
   }
   $json = @file_get_contents($file);
   if ($json === false) {
-    throw new RuntimeException("設定ファイルを読み込めませんでした: {$file}");
+    throw new RuntimeException("Cannot read configuration file: {$file}");
   }
   $settings = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
   $path = is_array($settings) ? ($settings['OUTPUT_PATH'] ?? null) : null;
   if (!is_string($path) || trim($path) === '') {
-    throw new RuntimeException('設定ファイルのOUTPUT_PATHにDBパスを指定してください');
+    throw new RuntimeException('Set OUTPUT_PATH to the database path in the configuration file');
   }
   $path = trim($path);
   if (str_starts_with($path, '~')) {
@@ -74,7 +74,7 @@ function transcriptDatabasePath(string $directory): string
       $userDirectory = $drive && $relativeHome ? $drive . $relativeHome : false;
     }
     if (!$userDirectory) {
-      throw new RuntimeException('OUTPUT_PATHの~を展開するホームディレクトリを取得できませんでした');
+      throw new RuntimeException('Cannot determine the home directory for expanding ~ in OUTPUT_PATH');
     }
     return rtrim($userDirectory, '/\\') . DIRECTORY_SEPARATOR . ltrim(substr($path, 1), '/\\');
   }
@@ -124,16 +124,16 @@ function collectTranscripts(PDO $db, callable $download): int
         usleep(1000000);
       }
       if (!is_string($vtt) || !preg_match('/\A(?:\xEF\xBB\xBF)?WEBVTT(?:[ \t][^\r\n]*)?(?:\r\n|\r|\n)/', $vtt)) {
-        throw new RuntimeException('WebVTT形式ではありません');
+        throw new RuntimeException('Invalid WebVTT format');
       }
       $update->execute([':vtt' => $vtt, ':id' => $row['content_id'], ':url' => $row['url']]);
       $saved += $update->rowCount();
     } catch (Throwable $error) {
       $failed++;
-      fwrite(STDERR, "取得・保存失敗 [{$row['content_id']}]: {$error->getMessage()}\n");
+      fwrite(STDERR, "Download/save failed [{$row['content_id']}]: {$error->getMessage()}\n");
     }
   }
-  fwrite(STDOUT, "保存: {$saved}件 / 失敗: {$failed}件\n");
+  fwrite(STDOUT, "Saved: {$saved} / Failed: {$failed}\n");
   return $failed === 0 ? 0 : 1;
 }
 
@@ -142,7 +142,7 @@ function downloadTranscript(string $url): string
   echo "Downloading transcript: {$url}\n";
   $curl = curl_init($url);
   if ($curl === false) {
-    throw new RuntimeException('cURLを初期化できませんでした');
+    throw new RuntimeException('Cannot initialize cURL');
   }
   try {
     curl_setopt_array($curl, [
@@ -155,7 +155,7 @@ function downloadTranscript(string $url): string
     ]);
     $body = curl_exec($curl);
     if ($body === false) {
-      throw new RuntimeException('ダウンロード失敗: ' . curl_error($curl));
+      throw new RuntimeException('Download failed: ' . curl_error($curl));
     }
     $status = curl_getinfo($curl, CURLINFO_HTTP_CODE);
     if ($status !== 200) {

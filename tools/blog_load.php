@@ -11,13 +11,13 @@ libxml_use_internal_errors(true);
 
 $feedContent = @file_get_contents($atomUrl);
 if ($feedContent === false) {
-  fwrite(STDERR, "Atomフィードの取得に失敗しました: {$atomUrl}\n");
+  fwrite(STDERR, "Failed to fetch Atom feed: {$atomUrl}\n");
   exit(1);
 }
 
 $xml = simplexml_load_string($feedContent);
 if ($xml === false) {
-  fwrite(STDERR, "Atomフィードの解析に失敗しました。\n");
+  fwrite(STDERR, "Failed to parse Atom feed.\n");
   foreach (libxml_get_errors() as $error) {
     fwrite(STDERR, trim($error->message) . "\n");
   }
@@ -27,7 +27,7 @@ if ($xml === false) {
 
 $rootName = $xml->getName();
 if ($rootName !== 'feed' && $rootName !== 'rss') {
-  fwrite(STDERR, "このプログラムはAtomフィードまたはRSS 2.0を想定しています。\n");
+  fwrite(STDERR, "Expected an Atom or RSS 2.0 feed.\n");
   exit(1);
 }
 
@@ -197,7 +197,7 @@ $json = json_encode(
 );
 
 if ($json === false) {
-  fail('JSONの生成に失敗しました: ' . json_last_error_msg());
+  fail('Failed to generate JSON: ' . json_last_error_msg());
 }
 
 function formatDateToJst(string $date): string
@@ -221,10 +221,10 @@ if ($options['mode'] === 'sql') {
   if ($options['sql_output'] === null) {
     fwrite(STDOUT, $sql);
   } elseif (file_put_contents($options['sql_output'], $sql) === false) {
-    fail("SQLファイルの書き込みに失敗しました: {$options['sql_output']}");
+    fail("Failed to write SQL file: {$options['sql_output']}");
   } else {
     fwrite(STDOUT, $json . PHP_EOL);
-    fwrite(STDERR, "SQLファイルを生成しました: {$options['sql_output']}\n");
+    fwrite(STDERR, "SQL file generated: {$options['sql_output']}\n");
   }
   exit(0);
 }
@@ -233,7 +233,7 @@ if ($options['mode'] === 'write') {
   writeArticlesToDatabase($options['database'], $articles);
   fwrite(
     STDERR,
-    count($articles) . "件をSQLiteへ書き込みました: {$options['database']}\n"
+    count($articles) . " records written to SQLite: {$options['database']}\n"
   );
 }
 
@@ -241,9 +241,9 @@ fwrite(STDOUT, $json . PHP_EOL);
 
 if ($options['json_output'] !== null) {
   if (file_put_contents($options['json_output'], $json . PHP_EOL) === false) {
-    fail("JSONファイルの書き込みに失敗しました: {$options['json_output']}");
+    fail("Failed to write JSON file: {$options['json_output']}");
   }
-  fwrite(STDERR, "JSONファイルを生成しました: {$options['json_output']}\n");
+  fwrite(STDERR, "JSON file generated: {$options['json_output']}\n");
 }
 
 function parseArguments(array $argv): array
@@ -271,14 +271,14 @@ function parseArguments(array $argv): array
     } elseif ($arg === '--help' || $arg === '-h') {
       usage(null, 0);
     } elseif (str_starts_with($arg, '--')) {
-      usage("不明なオプションです: {$arg}");
+      usage("Unknown option: {$arg}");
     } else {
       $positionals[] = $arg;
     }
   }
 
   if (count($positionals) !== 2) {
-    usage('source_idとフィードURLを指定してください');
+    usage('Specify source_id and feed URL');
   }
   $options['source_id'] = $positionals[0];
   $options['feed_url'] = $positionals[1];
@@ -288,7 +288,7 @@ function parseArguments(array $argv): array
 function setMode(string $current, string $new): string
 {
   if ($current !== 'write' && $current !== $new) {
-    usage('--dry-runと--sqlは同時に指定できません');
+    usage('--dry-run and --sql cannot be used together');
   }
   return $new;
 }
@@ -297,7 +297,7 @@ function optionValue(string $argument, string $prefix): string
 {
   $value = substr($argument, strlen($prefix));
   if ($value === '') {
-    usage("{$prefix}には値を指定してください");
+    usage("Specify a value for {$prefix}");
   }
   return $value;
 }
@@ -305,21 +305,21 @@ function optionValue(string $argument, string $prefix): string
 function usage(?string $error = null, int $exitCode = 2): never
 {
   if ($error !== null) {
-    fwrite(STDERR, "エラー: {$error}\n\n");
+    fwrite(STDERR, "Error: {$error}\n\n");
   }
   fwrite(
     $exitCode === 0 ? STDOUT : STDERR,
     <<<TEXT
-使用方法:
-  php tools/blog_load.php <source_id> <feed_url> [オプション]
+Usage:
+  php tools/blog_load.php <source_id> <feed_url> [options]
 
-オプション:
-  --database=<file>   SQLiteファイル（既定: user/data/mediadata.sqlite3）
-  --dry-run           読み込んだJSONを標準出力し、SQLiteへ書き込まない
-  --sql               等価なSQLを標準出力し、SQLiteへ書き込まない
-  --sql-output=<file> SQLをファイルへ、JSONを標準出力し、SQLiteへ書き込まない
-  --json-output=<file> JSONを標準出力に加えてファイルにも保存
-  -h, --help          このヘルプを表示
+Options:
+  --database=<file>   SQLite file (default: user/data/mediadata.sqlite3)
+  --dry-run           Print JSON to stdout without writing to SQLite
+  --sql               Print SQL to stdout without writing to SQLite
+  --sql-output=<file> Write SQL to file and JSON to stdout without writing to SQLite
+  --json-output=<file> Save JSON to file as well as stdout
+  -h, --help          Show this help
 
 TEXT
   );
@@ -345,10 +345,10 @@ function getContentId(
 function writeArticlesToDatabase(string $databaseFile, array $articles): void
 {
   if (!extension_loaded('pdo_sqlite')) {
-    fail('PDO SQLite拡張が利用できません');
+    fail('PDO SQLite extension is unavailable');
   }
   if (!is_dir(dirname($databaseFile))) {
-    fail('SQLiteファイルの保存先ディレクトリがありません: ' . dirname($databaseFile));
+    fail('SQLite output directory does not exist: ' . dirname($databaseFile));
   }
 
   try {
@@ -359,7 +359,7 @@ function writeArticlesToDatabase(string $databaseFile, array $articles): void
       "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ARTICLE'"
     )->fetchColumn();
     if ($exists === false) {
-      throw new RuntimeException('必要なテーブルがありません: ARTICLE');
+      throw new RuntimeException('Required table is missing: ARTICLE');
     }
 
     $pdo->beginTransaction();
@@ -379,7 +379,7 @@ function writeArticlesToDatabase(string $databaseFile, array $articles): void
     if (isset($pdo) && $pdo->inTransaction()) {
       $pdo->rollBack();
     }
-    fail('SQLiteへの書き込みに失敗しました: ' . $error->getMessage());
+    fail('Failed to write to SQLite: ' . $error->getMessage());
   }
 }
 

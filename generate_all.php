@@ -9,7 +9,7 @@ main();
 function main(): void
 {
   $entries = readEntries(ENTRIES_FILE);
-  $databaseFile = resolveOutputPath(readString($entries, 'OUTPUT_PATH', '設定ファイル'));
+  $databaseFile = resolveOutputPath(readString($entries, 'OUTPUT_PATH', 'configuration'));
   $databaseOption = '--database=' . $databaseFile;
   $processed = 0;
   foreach (readEntryGroup($entries['CONTENTS'], 'podcasts') as $entry) {
@@ -42,7 +42,7 @@ function main(): void
 
   fwrite(
     STDOUT,
-    sprintf("%d件のWebメディアをSQLiteへ書き込みました: %s\n", $processed, $databaseFile)
+    sprintf("Processed %d web sources in SQLite: %s\n", $processed, $databaseFile)
   );
 }
 
@@ -66,7 +66,7 @@ function resolveOutputPath(string $path): string
   }
 
   if ($home === false || $home === '') {
-    fail('OUTPUT_PATHの~を展開するホームディレクトリを取得できませんでした');
+    fail('Cannot determine the home directory for expanding ~ in OUTPUT_PATH');
   }
 
   $relativePath = ltrim(substr($path, 1), '/\\');
@@ -77,17 +77,17 @@ function readEntries(string $path): array
 {
   $json = @file_get_contents($path);
   if ($json === false) {
-    fail("設定ファイルを読み込めませんでした: {$path}");
+    fail("Cannot read configuration file: {$path}");
   }
 
   try {
     $data = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
   } catch (JsonException $error) {
-    fail("設定ファイルのJSONが不正です: {$error->getMessage()}");
+    fail("Invalid configuration JSON: {$error->getMessage()}");
   }
 
   if (!is_array($data)) {
-    fail('設定ファイルのルートは配列である必要があります');
+    fail('Configuration root must be an object or array');
   }
 
   return $data;
@@ -99,13 +99,13 @@ function readEntryGroup(array $entries, string $group): array
     return [];
   }
   if (!is_array($entries[$group])) {
-    fail("{$group} は配列である必要があります");
+    fail("{$group} must be an array");
   }
 
   $result = [];
   foreach ($entries[$group] as $entry) {
     if (!is_array($entry)) {
-      fail("{$group} の各要素はオブジェクトである必要があります");
+      fail("Each entry in {$group} must be an object");
     }
     $result[] = $entry;
   }
@@ -116,12 +116,12 @@ function readEntryGroup(array $entries, string $group): array
 function readSourceId(array $entry, string $group): string
 {
   if (!isset($entry['id']) || (!is_int($entry['id']) && !is_string($entry['id']))) {
-    fail("{$group} の項目に有効なidがありません");
+    fail("Missing or invalid id in {$group}");
   }
 
   $sourceId = trim((string)$entry['id']);
   if ($sourceId === '') {
-    fail("{$group} の項目に有効なidがありません");
+    fail("Missing or invalid id in {$group}");
   }
 
   return $sourceId;
@@ -130,12 +130,12 @@ function readSourceId(array $entry, string $group): string
 function readString(array $entry, string $key, string $group): string
 {
   if (!isset($entry[$key]) || !is_string($entry[$key])) {
-    fail("{$group} の項目に有効な{$key}がありません");
+    fail("Missing or invalid {$key} in {$group}");
   }
 
   $value = trim($entry[$key]);
   if ($value === '') {
-    fail("{$group} の項目に有効な{$key}がありません");
+    fail("Missing or invalid {$key} in {$group}");
   }
 
   return $value;
@@ -144,7 +144,7 @@ function readString(array $entry, string $key, string $group): string
 function runPhpScript(string $scriptPath, array $args): void
 {
   if (!is_file($scriptPath)) {
-    fail("スクリプトが見つかりません: {$scriptPath}");
+    fail("Script not found: {$scriptPath}");
   }
 
   $command = array_merge(
@@ -154,7 +154,7 @@ function runPhpScript(string $scriptPath, array $args): void
 
   $output = fopen('php://temp', 'w+');
   if ($output === false) {
-    fail('子スクリプトの出力先を作成できませんでした');
+    fail('Cannot create child process output stream');
   }
 
   $process = proc_open(
@@ -165,19 +165,19 @@ function runPhpScript(string $scriptPath, array $args): void
   );
   if (!is_resource($process)) {
     fclose($output);
-    fail("スクリプトを起動できませんでした: {$scriptPath}");
+    fail("Cannot start script: {$scriptPath}");
   }
 
   $exitCode = proc_close($process);
   fclose($output);
 
   if ($exitCode !== 0) {
-    fail("スクリプトの実行に失敗しました: {$scriptPath}", $exitCode);
+    fail("Script failed: {$scriptPath}", $exitCode);
   }
 }
 
 function fail(string $message, int $exitCode = 1): never
 {
-  fwrite(STDERR, "エラー: {$message}\n");
+  fwrite(STDERR, "Error: {$message}\n");
   exit($exitCode);
 }
