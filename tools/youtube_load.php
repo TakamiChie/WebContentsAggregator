@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-const DEFAULT_DATABASE_FILE = __DIR__ . '/../user/data/mediadata.sqlite3';
+const DEFAULT_DATABASE_FILE = __DIR__ . '/../../user/data/mediadata.sqlite3';
 
 main($argv);
 
@@ -217,7 +217,7 @@ function usage(?string $error = null, int $exitCode = 2): never
     $exitCode === 0 ? STDOUT : STDERR,
     <<<TEXT
 使用方法:
-  php youtube2json.php <source_id> <playlist_id> [オプション]
+  php tools/youtube_load.php <source_id> <playlist_id> [オプション]
 
 オプション:
   --database=<file>   SQLiteファイル（既定: user/data/mediadata.sqlite3）

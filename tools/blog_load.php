@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-const DEFAULT_DATABASE_FILE = __DIR__ . '/../user/data/mediadata.sqlite3';
+const DEFAULT_DATABASE_FILE = __DIR__ . '/../../user/data/mediadata.sqlite3';
 
 $options = parseArguments($argv);
 $atomUrl = $options['feed_url'];
@@ -311,7 +311,7 @@ function usage(?string $error = null, int $exitCode = 2): never
     $exitCode === 0 ? STDOUT : STDERR,
     <<<TEXT
 使用方法:
-  php blog2json.php <source_id> <feed_url> [オプション]
+  php tools/blog_load.php <source_id> <feed_url> [オプション]
 
 オプション:
   --database=<file>   SQLiteファイル（既定: user/data/mediadata.sqlite3）

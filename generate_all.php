@@ -13,7 +13,7 @@ function main(): void
   $databaseOption = '--database=' . $databaseFile;
   $processed = 0;
   foreach (readEntryGroup($entries['CONTENTS'], 'podcasts') as $entry) {
-    runPhpScript(__DIR__ . '/podcast2json.php', [
+    runPhpScript(__DIR__ . '/tools/podcast_load.php', [
       readSourceId($entry, 'podcasts'),
       readString($entry, 'url', 'podcasts'),
       $databaseOption,
@@ -23,7 +23,7 @@ function main(): void
   }
 
   foreach (readEntryGroup($entries['CONTENTS'], 'blogs') as $entry) {
-    runPhpScript(__DIR__ . '/blog2json.php', [
+    runPhpScript(__DIR__ . '/tools/blog_load.php', [
       readSourceId($entry, 'blogs'),
       readString($entry, 'url', 'blogs'),
       $databaseOption,
@@ -32,7 +32,7 @@ function main(): void
   }
 
   foreach (readEntryGroup($entries['CONTENTS'], 'youtube') as $entry) {
-    runPhpScript(__DIR__ . '/youtube2json.php', [
+    runPhpScript(__DIR__ . '/tools/youtube_load.php', [
       readSourceId($entry, 'youtube'),
       readString($entry, 'pid', 'youtube'),
       $databaseOption,
