@@ -1,0 +1,15 @@
+description: Collect web contents, then download transcripts after successful collection.
+type: graph
+# Every day at 07:10 through 20:10 JST (UTC+09:00), 14 runs per day.
+schedule: "CRON_TZ=UTC 10 0-11,22-23 * * *"
+# Keep this YAML beside the PHP scripts. If copied elsewhere, set the project path here.
+working_dir: .
+
+steps:
+  - id: generate_all
+    run: php generate_all.php
+
+  - id: get_transcript
+    run: php get_transcript.php
+    depends:
+      - generate_all
