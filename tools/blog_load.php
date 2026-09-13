@@ -364,11 +364,12 @@ function writeArticlesToDatabase(string $databaseFile, array $articles): void
 
     $pdo->beginTransaction();
     $statement = $pdo->prepare(
-      'INSERT OR REPLACE INTO "ARTICLE" '
+      'INSERT INTO "ARTICLE" '
       . '("title", "url", "published_at", "cover_art", "summary", "hashtags", '
       . '"source_id", "content_id") '
       . 'VALUES (:title, :url, :published_at, :cover_art, :summary, :hashtags, '
       . ':source_id, :content_id)'
+      . articleUpsertClause()
     );
     foreach ($articles as $article) {
       $statement->execute(articleRow($article));
@@ -402,15 +403,29 @@ function buildSqlScript(array $articles): string
   foreach ($articles as $article) {
     $row = articleRow($article);
     $lines[] = sprintf(
-      'INSERT OR REPLACE INTO "ARTICLE" '
+      'INSERT INTO "ARTICLE" '
       . '("title", "url", "published_at", "cover_art", "summary", "hashtags", '
       . '"source_id", "content_id") '
-      . 'VALUES (%s, %s, %s, %s, %s, %s, %s, %s);',
+      . 'VALUES (%s, %s, %s, %s, %s, %s, %s, %s)' . articleUpsertClause() . ';',
       ...array_map('sqlLiteral', array_values($row))
     );
   }
   $lines[] = 'COMMIT;';
   return implode(PHP_EOL, $lines) . PHP_EOL;
+}
+
+function articleUpsertClause(): string
+{
+  $columns = ['title', 'url', 'published_at', 'cover_art', 'summary', 'hashtags', 'source_id'];
+  $assignments = [];
+  $changes = [];
+  foreach ($columns as $column) {
+    $assignments[] = '"' . $column . '" = excluded."' . $column . '"';
+    $changes[] = '"ARTICLE"."' . $column . '" IS NOT excluded."' . $column . '"';
+  }
+  return ' ON CONFLICT ("content_id") DO UPDATE SET '
+    . implode(', ', $assignments)
+    . ' WHERE ' . implode(' OR ', $changes);
 }
 
 function sqlLiteral(mixed $value): string

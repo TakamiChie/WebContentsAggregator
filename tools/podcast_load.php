@@ -247,9 +247,10 @@ function writePodcastToDatabase(string $databaseFile, array $podcast): void
     $pdo->beginTransaction();
 
     $insertEpisode = $pdo->prepare(
-      'INSERT OR REPLACE INTO ARTICLE '
+      'INSERT INTO ARTICLE '
       . '(title, url, published_at, cover_art, summary, hashtags, source_id, content_id) '
       . 'VALUES (:title, :url, :published_at, :cover_art, :summary, :hashtags, :source_id, :content_id)'
+      . articleUpsertClause()
     );
     foreach ($podcast['episodes'] as $episode) {
       $insertEpisode->execute(articleRow($episode));
@@ -293,13 +294,13 @@ function articleRow(array $episode): array
 
 function buildSqlScript(array $podcast): string
 {
-  $lines = [];
+  $lines = ['BEGIN TRANSACTION;'];
 
   foreach ($podcast['episodes'] as $episode) {
     $lines[] = sprintf(
-      'INSERT OR REPLACE INTO "ARTICLE" '
+      'INSERT INTO "ARTICLE" '
       . '("title", "url", "published_at", "cover_art", "summary", "hashtags", "source_id", "content_id") '
-      . 'VALUES (%s, %s, %s, %s, %s, %s, %s, %s);',
+      . 'VALUES (%s, %s, %s, %s, %s, %s, %s, %s)' . articleUpsertClause() . ';',
       sqlLiteral($episode['title']),
       sqlLiteral($episode['url']),
       sqlLiteral($episode['published_at']),
@@ -313,6 +314,20 @@ function buildSqlScript(array $podcast): string
 
   $lines[] = 'COMMIT;';
   return implode(PHP_EOL, $lines) . PHP_EOL;
+}
+
+function articleUpsertClause(): string
+{
+  $columns = ['title', 'url', 'published_at', 'cover_art', 'summary', 'hashtags', 'source_id'];
+  $assignments = [];
+  $changes = [];
+  foreach ($columns as $column) {
+    $assignments[] = '"' . $column . '" = excluded."' . $column . '"';
+    $changes[] = '"ARTICLE"."' . $column . '" IS NOT excluded."' . $column . '"';
+  }
+  return ' ON CONFLICT ("content_id") DO UPDATE SET '
+    . implode(', ', $assignments)
+    . ' WHERE ' . implode(' OR ', $changes);
 }
 
 function sqlLiteral(mixed $value): string
