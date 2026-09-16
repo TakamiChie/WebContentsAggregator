@@ -1,0 +1,10 @@
+{
+  "name": "onpu/web-contents-aggregator",
+  "description": "Utilities for aggregating web content metadata.",
+  "type": "project",
+  "license": "MIT",
+  "require": {
+    "php": ">=8.1",
+    "symfony/yaml": "^7.0"
+  }
+}
