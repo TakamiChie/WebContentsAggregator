@@ -167,11 +167,26 @@ try {
   check(json_decode($saved['llm_hashtags'], true) === $valid['hashtags'], 'hashtags stored as JSON');
   check($saved['summary'] === '配信元の概要' && $saved['hashtags'] === '#配信元タグ', 'source metadata preserved');
   check($db->query("SELECT llm_summary FROM ARTICLE WHERE content_id = 'b'")->fetchColumn() === null, 'other article unchanged');
+  $calls = [];
+  check(summarizeArticles($db, $write, $allowed, $generate) === 0, 'completed article succeeds without regeneration');
+  check($calls === [], 'completed article does not call generator');
+  check($db->query("SELECT * FROM ARTICLE WHERE content_id = 'a'")->fetch(PDO::FETCH_ASSOC) === $saved, 'skip preserves saved fields');
+  check(summarizeArticles($db, $options, $allowed, $generate) === 0, 'nodb previews completed article');
+  check($calls === ['a'], 'nodb still calls generator for completed article');
+  $db->exec("UPDATE ARTICLE SET llm_tags = NULL WHERE content_id = 'a'");
+  $saved = $db->query("SELECT * FROM ARTICLE WHERE content_id = 'a'")->fetch(PDO::FETCH_ASSOC);
   check(summarizeArticles($db, $write, $allowed, fn() => '{}') === 1, 'bad generation fails');
   check($db->query("SELECT * FROM ARTICLE WHERE content_id = 'a'")->fetch(PDO::FETCH_ASSOC) === $saved, 'failure preserves previous result');
   check(summarizeArticles($db, $write, [], fn() => summarizeJson($none)) === 0, 'save empty selection');
   check($db->query("SELECT llm_hashtags FROM ARTICLE WHERE content_id = 'a'")->fetchColumn() === '[]', 'no-match stored as empty array');
 
+  $calls = [];
+  $skipWaits = [];
+  check(summarizeArticles($db, ['content' => null, 'nodb' => false], $allowed, $generate,
+    static function (int $seconds) use (&$skipWaits): void { $skipWaits[] = $seconds; }) === 0, 'batch skips completed articles including empty JSON tags');
+  check($calls === ['b'] && $skipWaits === [], 'only unfinished article is generated without waiting for skipped article');
+  $db->exec("UPDATE ARTICLE SET llm_summary = ' ' WHERE content_id = 'a'");
+  $db->exec("UPDATE ARTICLE SET llm_tags = '' WHERE content_id = 'b'");
   $calls = [];
   $events = [];
   check(summarizeArticles($db, ['content' => null, 'nodb' => false, 'cooldown' => 7], $allowed,

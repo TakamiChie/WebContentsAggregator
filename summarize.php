@@ -392,7 +392,8 @@ function summarizeArticles(PDO $db, array $options, array $allowed, callable $ge
   if ($ids === [] && $options['content'] !== null) {
     throw new RuntimeException('Article not found or transcript_vtt is empty: ' . $options['content']);
   }
-  $read = $db->prepare('SELECT content_id, title, transcript_vtt FROM ARTICLE WHERE content_id = :id');
+  $columns = 'content_id, title, transcript_vtt' . ($options['nodb'] ? '' : ', llm_summary, llm_tags');
+  $read = $db->prepare("SELECT {$columns} FROM ARTICLE WHERE content_id = :id");
   $update = $options['nodb'] ? null : $db->prepare('UPDATE ARTICLE SET llm_summary = :summary,
     llm_tags = :tags, llm_hashtags = :hashtags
     WHERE content_id = :id AND transcript_vtt = :vtt AND title = :title');
@@ -400,17 +401,21 @@ function summarizeArticles(PDO $db, array $options, array $allowed, callable $ge
   $failed = 0;
   $cooldown = $options['cooldown'] ?? 20;
   $wait ??= static function (int $seconds): void { sleep($seconds); };
-  foreach ($ids as $index => $id) {
-    if ($index > 0 && $cooldown > 0) {
-      fwrite(STDERR, "Waiting {$cooldown}s before next article\n");
-      $wait($cooldown);
-    }
+  foreach ($ids as $id) {
     try {
       $read->execute([':id' => $id]);
       $row = $read->fetch(PDO::FETCH_ASSOC);
       $read->closeCursor();
       if ($row === false) {
         throw new RuntimeException('Article was removed during processing');
+      }
+      if (!$options['nodb'] && trim($row['llm_summary'] ?? '') !== '' && trim($row['llm_tags'] ?? '') !== '') {
+        fwrite(STDERR, "Skipping [{$id}]: llm_summary and llm_tags already populated\n");
+        continue;
+      }
+      if ($processed + $failed > 0 && $cooldown > 0) {
+        fwrite(STDERR, "Waiting {$cooldown}s before next article\n");
+        $wait($cooldown);
       }
       fwrite(STDERR, "Summarizing [{$id}] {$row['title']}\n");
       $result = summarizeValidate($generate($row), $allowed);
