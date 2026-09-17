@@ -5,7 +5,7 @@
 | 追加カラム | SQLite型 | 保存内容 |
 | --- | --- | --- |
 | `llm_summary` | `TEXT NULL DEFAULT NULL` | 改行で区切った5行の要約（単一の文字列） |
-| `llm_tags` | `TEXT NULL DEFAULT NULL` | 内容分析タグ、最大10件のJSON文字列配列 |
+| `llm_tags` | `TEXT NULL DEFAULT NULL` | 内容分析タグ、最大20件のJSON文字列配列 |
 | `llm_hashtags` | `TEXT NULL DEFAULT NULL` | 記事選定用ハッシュタグ、0～3件のJSON文字列配列（`#`付き） |
 
 未生成は `NULL`、生成済みでタグがない場合は JSON の `[]` を保存します。配信元から取得する既存の `summary` / `hashtags` は変更しません。
@@ -58,7 +58,7 @@ hashtags: [地域コミュニティ支援, 山手縁乃庭]
 ## 実行例
 
 ```shell
-# 文字起こしがある全記事を生成・保存
+# 文字起こしがある全記事を生成・保存（記事選定用ハッシュタグなし）
 php summarize.php
 
 # content_idを指定した1記事を生成・保存
@@ -66,6 +66,9 @@ php summarize.php --content="対象のcontent_id"
 
 # DBに書き込まず、1記事の生成結果を確認（--content ID の形式も可）
 php summarize.php --content "対象のcontent_id" --nodb
+
+# MDの候補を使用して記事選定用ハッシュタグも生成
+php summarize.php --content "対象のcontent_id" --nodb --with-hashtags
 
 # 全対象記事を生成し、標準出力にJSON Linesで出力
 php summarize.php --nodb
@@ -79,7 +82,7 @@ php tests/summarize_test.php
 
 `--nodb` ではDBを読み取り専用で開き、1記事につき1行のJSON（`content_id`, `summary`, `tags`, `hashtags`）を標準出力へ出します。要約中の改行はJSON内で `\n` となります。進捗・エラー・処理件数は標準エラーへ出します。
 
-`--nohashtag` は候補ハッシュタグと候補ページのタイトル・本文をLLMに渡さず、記事データだけで要約と内容分析タグ（`tags`）を生成します。候補リストは空配列となり、記事選定用の `hashtags` は `[]` に限定します。`TAG_COLLECTION_DIR` の参照・MDファイルの読み取りを省略するため、このオプション使用時は同設定が未指定でも構いません。記事本文に元からあるハッシュタグは削除しません。`--nodb` を併用しない場合は生成結果をDBに保存し、既存の `llm_hashtags` も `[]` に更新します。
+通常実行と `--nohashtag` は同じ動作です。候補ハッシュタグと候補ページのタイトル・本文をLLMに渡さず、記事データだけで要約と最大20件の内容分析タグ（`tags`）を生成します。候補リストは空配列となり、記事選定用の `hashtags` は `[]` に限定します。`TAG_COLLECTION_DIR` の参照・MDファイルの読み取りを省略するため、このモードでは同設定が未指定でも構いません。記事本文に元からあるハッシュタグは削除しません。`--nodb` を併用しない場合は生成結果をDBに保存し、既存の `llm_hashtags` も `[]` に更新します。候補を使う場合だけ `--with-hashtags` を指定してください。
 
 候補が空の場合、出力スキーマには `const: []` を使います。一部のLM Studioランタイムでは `maxItems: 0` が不正な生成文法に変換され、構造化出力が効かなくなるためです。応答がJSONでなかった場合は、HTTP応答全体の解析失敗かLLM生成本文の解析失敗かをエラーメッセージで区別します。
 

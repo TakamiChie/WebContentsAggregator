@@ -22,10 +22,11 @@ function summarizeMain(array $argv): int
 {
   $options = summarizeOptions($argv);
   if ($options['help']) {
-    fwrite(STDOUT, "Usage: php summarize.php [--content=<content_id>] [--nodb] [--nohashtag]\n"
+    fwrite(STDOUT, "Usage: php summarize.php [--content=<content_id>] [--nodb] [--with-hashtags]\n"
       . "  --content <content_id>  Process one article (also accepts --content=<id>)\n"
       . "  --nodb                 Print JSON Lines without writing to SQLite\n"
-      . "  --nohashtag            Skip hashtag candidates and page context; return hashtags: []\n"
+      . "  --nohashtag            Explicitly use the default: no hashtag candidates\n"
+      . "  --with-hashtags        Load selection hashtag candidates from TAG_COLLECTION_DIR\n"
       . "  -h, --help             Show this help\n"
       . "Configuration: settings.json; required schema: SUMMARIZE.md\n");
     return 0;
@@ -71,7 +72,7 @@ function summarizeMain(array $argv): int
   $allowed = array_column($catalog, 'hashtag');
   $schema = summarizeSchema($allowed);
   fwrite(STDERR, $options['nohashtag']
-    ? "Selection hashtags disabled (--nohashtag)\n"
+    ? "Selection hashtags disabled (default)\n"
     : 'Collected selection hashtags: ' . count($allowed) . "\n");
   return summarizeArticles($db, $options, $allowed, static function (array $row) use ($catalog, $system, $user, $schema, $model, $endpoint): string {
     $text = summarizeTranscript($row['transcript_vtt']);
@@ -85,7 +86,7 @@ function summarizeMain(array $argv): int
 
 function summarizeOptions(array $argv): array
 {
-  $options = ['content' => null, 'nodb' => false, 'nohashtag' => false, 'help' => false];
+  $options = ['content' => null, 'nodb' => false, 'nohashtag' => true, 'help' => false];
   for ($i = 1; $i < count($argv); $i++) {
     $arg = $argv[$i];
     if ($arg === '--help' || $arg === '-h') {
@@ -94,6 +95,8 @@ function summarizeOptions(array $argv): array
       $options['nodb'] = true;
     } elseif ($arg === '--nohashtag') {
       $options['nohashtag'] = true;
+    } elseif ($arg === '--with-hashtags') {
+      $options['nohashtag'] = false;
     } elseif ($arg === '--content' || str_starts_with($arg, '--content=')) {
       $value = $arg === '--content' ? ($argv[++$i] ?? '') : substr($arg, 10);
       if (trim($value) === '' || str_starts_with($value, '--') || $options['content'] !== null) {
@@ -346,7 +349,7 @@ function summarizeValidate(string $json, array $allowed): array
   if (count($lines) !== 5 || in_array('', $lines, true)) {
     throw new RuntimeException('LLM summary must contain exactly five nonempty lines (received ' . count($lines) . ' lines)');
   }
-  foreach (['tags' => 10, 'hashtags' => 3] as $key => $limit) {
+  foreach (['tags' => 20, 'hashtags' => 3] as $key => $limit) {
     $values = $result[$key] ?? null;
     if (!is_array($values) || !array_is_list($values) || count($values) > $limit) {
       throw new RuntimeException("LLM {$key} must be an array with at most {$limit} items");

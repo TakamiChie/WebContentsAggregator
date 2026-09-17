@@ -46,10 +46,12 @@ mkdir($temporary);
 mkdir($temporary . '/nested');
 try {
   $options = summarizeOptions(['summarize.php', '--content', 'a', '--nodb']);
-  check($options === ['content' => 'a', 'nodb' => true, 'nohashtag' => false, 'help' => false], 'space options');
+  check($options === ['content' => 'a', 'nodb' => true, 'nohashtag' => true, 'help' => false], 'space options');
   check(summarizeOptions(['x', '--nohashtag', '--content=a', '--nodb'])
     === ['content' => 'a', 'nodb' => true, 'nohashtag' => true, 'help' => false], 'nohashtag combines with content and nodb');
   check(summarizeOptions(['x', '--content=a'])['content'] === 'a', 'equals option');
+  check(summarizeOptions(['x', '--with-hashtags'])['nohashtag'] === false, 'candidate mode is opt-in');
+  check(summarizeOptions(['x'])['nohashtag'] === true, 'no-candidate mode is default');
   foreach ([['--content'], ['--content='], ['--content', '--nodb'], ['--content=a', '--content=b'], ['--unknown']] as $args) {
     rejects(fn() => summarizeOptions(array_merge(['x'], $args)), 'invalid CLI must fail');
   }
@@ -89,14 +91,14 @@ try {
   $none['hashtags'] = [];
   check(summarizeValidate(summarizeJson($none), []) === $none, 'zero tags is valid');
   $maximum = $valid;
-  $maximum['tags'] = array_map(fn($i) => 'タグ' . $i, range(1, 10));
+  $maximum['tags'] = array_map(fn($i) => 'タグ' . $i, range(1, 20));
   $maximum['hashtags'] = array_slice($allowed, 0, 3);
   check(summarizeValidate(summarizeJson($maximum), $allowed) === $maximum, 'maximum counts valid');
   $badResults = [
     ['summary' => ['一', '二', '三', '四', '五']],
     ['summary' => "一\n二\n三\n四"],
     ['summary' => "一\n二\n\n四\n五"],
-    ['tags' => array_fill(0, 11, 'tag')],
+    ['tags' => array_fill(0, 21, 'tag')],
     ['tags' => new stdClass()],
     ['tags' => [42]],
     ['tags' => ['']],
@@ -117,6 +119,7 @@ try {
   }
   rejects(fn() => summarizeValidate(summarizeJson($valid), []), 'empty catalog forbids generated tags');
 
+  check(summarizeSchema([])['properties']['tags']['maxItems'] === 20, 'schema allows up to twenty analysis tags');
   $emptySchema = summarizeSchema([]);
   check($emptySchema['properties']['hashtags'] === ['type' => 'array', 'const' => []], 'empty catalog uses constant array without invalid zero-length grammar');
   $selectionSchema = summarizeSchema($allowed);
