@@ -73,6 +73,9 @@ php summarize.php --content "対象のcontent_id" --nodb --with-hashtags
 # 全対象記事を生成し、標準出力にJSON Linesで出力
 php summarize.php --nodb
 
+# 記事間の待ち時間を5秒に変更（0で待機なし）
+php summarize.php --cooldown=5
+
 # 候補ハッシュタグ・ページ説明を渡さず、1記事の生成結果を比較検証
 php summarize.php --content "対象のcontent_id" --nodb --nohashtag
 
@@ -81,6 +84,8 @@ php tests/summarize_test.php
 ```
 
 `--nodb` ではDBを読み取り専用で開き、1記事につき1行のJSON（`content_id`, `summary`, `tags`, `hashtags`）を標準出力へ出します。要約中の改行はJSON内で `\n` となります。進捗・エラー・処理件数は標準エラーへ出します。
+
+`--cooldown=N` または `--cooldown N` で記事間の待ち時間（整数秒）を指定できます。既定値は20秒、`0` で待機なしです。最初の記事の前と最後の記事の後は待ちません。記事の生成や保存に失敗した場合も、次の記事へ進む前に待ちます。単一記事の処理では待機しません。`--nodb` にも適用されます。
 
 通常実行と `--nohashtag` は同じ動作です。候補ハッシュタグと候補ページのタイトル・本文をLLMに渡さず、記事データだけで要約と最大20件の内容分析タグ（`tags`）を生成します。候補リストは空配列となり、記事選定用の `hashtags` は `[]` に限定します。`TAG_COLLECTION_DIR` の参照・MDファイルの読み取りを省略するため、このモードでは同設定が未指定でも構いません。記事本文に元からあるハッシュタグは削除しません。`--nodb` を併用しない場合は生成結果をDBに保存し、既存の `llm_hashtags` も `[]` に更新します。候補を使う場合だけ `--with-hashtags` を指定してください。
 

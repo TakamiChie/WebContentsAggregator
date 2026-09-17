@@ -46,13 +46,16 @@ mkdir($temporary);
 mkdir($temporary . '/nested');
 try {
   $options = summarizeOptions(['summarize.php', '--content', 'a', '--nodb']);
-  check($options === ['content' => 'a', 'nodb' => true, 'nohashtag' => true, 'help' => false], 'space options');
+  check($options === ['content' => 'a', 'nodb' => true, 'cooldown' => 20, 'nohashtag' => true, 'help' => false], 'space options');
   check(summarizeOptions(['x', '--nohashtag', '--content=a', '--nodb'])
-    === ['content' => 'a', 'nodb' => true, 'nohashtag' => true, 'help' => false], 'nohashtag combines with content and nodb');
+    === ['content' => 'a', 'nodb' => true, 'cooldown' => 20, 'nohashtag' => true, 'help' => false], 'nohashtag combines with content and nodb');
   check(summarizeOptions(['x', '--content=a'])['content'] === 'a', 'equals option');
   check(summarizeOptions(['x', '--with-hashtags'])['nohashtag'] === false, 'candidate mode is opt-in');
   check(summarizeOptions(['x'])['nohashtag'] === true, 'no-candidate mode is default');
-  foreach ([['--content'], ['--content='], ['--content', '--nodb'], ['--content=a', '--content=b'], ['--unknown']] as $args) {
+  check(summarizeOptions(['x'])['cooldown'] === 20, 'cooldown defaults to twenty seconds');
+  check(summarizeOptions(['x', '--cooldown=0'])['cooldown'] === 0, 'zero cooldown disables waiting');
+  check(summarizeOptions(['x', '--cooldown', '7'])['cooldown'] === 7, 'space cooldown syntax');
+  foreach ([['--content'], ['--content='], ['--content', '--nodb'], ['--content=a', '--content=b'], ['--cooldown'], ['--cooldown='], ['--cooldown=-1'], ['--cooldown=1.5'], ['--cooldown=abc'], ['--cooldown=999999999999999999999999'], ['--unknown']] as $args) {
     rejects(fn() => summarizeOptions(array_merge(['x'], $args)), 'invalid CLI must fail');
   }
   check(summarizePath('relative/db.sqlite', 'test') === dirname(__DIR__) . DIRECTORY_SEPARATOR . 'relative/db.sqlite', 'relative path');
@@ -146,7 +149,9 @@ try {
     $calls[] = $row['content_id'];
     return summarizeJson($valid);
   };
-  check(summarizeArticles($db, $options, $allowed, $generate) === 0, 'nodb succeeds');
+  $singleWaits = [];
+  check(summarizeArticles($db, $options, $allowed, $generate, static function (int $seconds) use (&$singleWaits): void { $singleWaits[] = $seconds; }) === 0, 'nodb succeeds');
+  check($singleWaits === [], 'single article has no cooldown');
   check($calls === ['a'], 'content filters exactly one article');
   check($db->query('SELECT * FROM ARTICLE ORDER BY content_id')->fetchAll(PDO::FETCH_ASSOC) === $before, 'nodb leaves data unchanged');
 
@@ -168,15 +173,22 @@ try {
   check($db->query("SELECT llm_hashtags FROM ARTICLE WHERE content_id = 'a'")->fetchColumn() === '[]', 'no-match stored as empty array');
 
   $calls = [];
-  check(summarizeArticles($db, ['content' => null, 'nodb' => false], $allowed,
-    static function (array $row) use (&$calls, $valid): string {
+  $events = [];
+  check(summarizeArticles($db, ['content' => null, 'nodb' => false, 'cooldown' => 7], $allowed,
+    static function (array $row) use (&$calls, &$events, $valid): string {
       $calls[] = $row['content_id'];
+      $events[] = 'generate:' . $row['content_id'];
       if ($row['content_id'] === 'a') {
         throw new RuntimeException('simulated HTTP failure');
       }
       return summarizeJson($valid);
-    }) === 1, 'batch reports partial failure');
+    }, static function (int $seconds) use (&$events): void { $events[] = 'wait:' . $seconds; }) === 1, 'batch reports partial failure');
   check($calls === ['a', 'b'], 'batch continues and skips empty transcripts');
+  check($events === ['generate:a', 'wait:7', 'generate:b'], 'cooldown runs once between attempts, even after failure');
+  $zeroWaits = [];
+  check(summarizeArticles($db, ['content' => null, 'nodb' => true, 'cooldown' => 0], $allowed,
+    fn() => summarizeJson($valid), static function (int $seconds) use (&$zeroWaits): void { $zeroWaits[] = $seconds; }) === 0, 'zero cooldown processes batch');
+  check($zeroWaits === [], 'zero cooldown never waits');
   foreach (['missing', 'empty', 'null'] as $id) {
     rejects(fn() => summarizeArticles($db, ['content' => $id, 'nodb' => true], $allowed, $generate), 'missing/no transcript errors');
   }

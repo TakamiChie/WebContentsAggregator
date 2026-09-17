@@ -22,9 +22,10 @@ function summarizeMain(array $argv): int
 {
   $options = summarizeOptions($argv);
   if ($options['help']) {
-    fwrite(STDOUT, "Usage: php summarize.php [--content=<content_id>] [--nodb] [--with-hashtags]\n"
+    fwrite(STDOUT, "Usage: php summarize.php [--content=<content_id>] [--nodb] [--with-hashtags] [--cooldown=seconds]\n"
       . "  --content <content_id>  Process one article (also accepts --content=<id>)\n"
       . "  --nodb                 Print JSON Lines without writing to SQLite\n"
+      . "  --cooldown <seconds>   Wait between articles (default: 20; also --cooldown=N)\n"
       . "  --nohashtag            Explicitly use the default: no hashtag candidates\n"
       . "  --with-hashtags        Load selection hashtag candidates from TAG_COLLECTION_DIR\n"
       . "  -h, --help             Show this help\n"
@@ -86,7 +87,7 @@ function summarizeMain(array $argv): int
 
 function summarizeOptions(array $argv): array
 {
-  $options = ['content' => null, 'nodb' => false, 'nohashtag' => true, 'help' => false];
+  $options = ['content' => null, 'nodb' => false, 'cooldown' => 20, 'nohashtag' => true, 'help' => false];
   for ($i = 1; $i < count($argv); $i++) {
     $arg = $argv[$i];
     if ($arg === '--help' || $arg === '-h') {
@@ -97,6 +98,13 @@ function summarizeOptions(array $argv): array
       $options['nohashtag'] = true;
     } elseif ($arg === '--with-hashtags') {
       $options['nohashtag'] = false;
+    } elseif ($arg === '--cooldown' || str_starts_with($arg, '--cooldown=')) {
+      $value = $arg === '--cooldown' ? ($argv[++$i] ?? '') : substr($arg, strlen('--cooldown='));
+      if (!preg_match('/\A(?:0|[1-9][0-9]*)\z/D', $value)
+        || filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]) === false) {
+        throw new InvalidArgumentException('Specify --cooldown as a nonnegative integer number of seconds');
+      }
+      $options['cooldown'] = (int)$value;
     } elseif ($arg === '--content' || str_starts_with($arg, '--content=')) {
       $value = $arg === '--content' ? ($argv[++$i] ?? '') : substr($arg, 10);
       if (trim($value) === '' || str_starts_with($value, '--') || $options['content'] !== null) {
@@ -367,7 +375,7 @@ function summarizeValidate(string $json, array $allowed): array
   return ['summary' => implode("\n", $lines), 'tags' => $result['tags'], 'hashtags' => $result['hashtags']];
 }
 
-function summarizeArticles(PDO $db, array $options, array $allowed, callable $generate): int
+function summarizeArticles(PDO $db, array $options, array $allowed, callable $generate, ?callable $wait = null): int
 {
   summarizeCheckSchema($db, $options['nodb']);
   // Fetch only IDs up front: do not keep all transcripts or an active read cursor during inference.
@@ -390,7 +398,13 @@ function summarizeArticles(PDO $db, array $options, array $allowed, callable $ge
     WHERE content_id = :id AND transcript_vtt = :vtt AND title = :title');
   $processed = 0;
   $failed = 0;
-  foreach ($ids as $id) {
+  $cooldown = $options['cooldown'] ?? 20;
+  $wait ??= static function (int $seconds): void { sleep($seconds); };
+  foreach ($ids as $index => $id) {
+    if ($index > 0 && $cooldown > 0) {
+      fwrite(STDERR, "Waiting {$cooldown}s before next article\n");
+      $wait($cooldown);
+    }
     try {
       $read->execute([':id' => $id]);
       $row = $read->fetch(PDO::FETCH_ASSOC);
