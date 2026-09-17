@@ -1,6 +1,7 @@
 {
   "OUTPUT_PATH": "",
   "TAG_COLLECTION_DIR": "",
+  "LLM_MODEL": "",
   "CONTENTS": {
     "podcasts": [],
     "blogs": [],

@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary_lines", "tags", "hashtags"],
+  "properties": {
+    "summary_lines": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": { "type": "string" }
+    },
+    "tags": {
+      "type": "array",
+      "maxItems": 10,
+      "items": { "type": "string" }
+    },
+    "hashtags": {
+      "type": "array",
+      "maxItems": 3,
+      "items": { "type": "string" }
+    }
+  }
+}
