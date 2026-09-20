@@ -13,3 +13,8 @@ steps:
     run: php get_transcript.php
     depends:
       - generate_all
+
+  - id: summarize
+    run: php summarize.php
+    depends:
+      - get_transcript
