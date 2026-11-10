@@ -1,5 +1,13 @@
 {
   "OUTPUT_PATH": "",
+  "DATABASE_UPLOAD": {
+    "URL": "sftp://example.com/path/to/mediadata.sqlite3",
+    "USERNAME": "",
+    "PASSWORD_ENV": "",
+    "PRIVATE_KEY": "",
+    "SSH_PUBLIC_KEY": "",
+    "TIMEOUT": 300
+  },
   "TAG_COLLECTION_DIR": "",
   "LLM_MODEL": "",
   "CONTENTS": {

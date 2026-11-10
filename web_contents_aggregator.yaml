@@ -23,3 +23,8 @@ steps:
     run: php classify_topics.php
     depends:
       - summarize
+
+  - id: upload_database
+    run: php upload_database.php
+    depends:
+      - classify_topics
