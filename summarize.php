@@ -394,8 +394,9 @@ function summarizeArticles(PDO $db, array $options, array $allowed, callable $ge
   }
   $columns = 'content_id, title, transcript_vtt' . ($options['nodb'] ? '' : ', llm_summary, llm_tags');
   $read = $db->prepare("SELECT {$columns} FROM ARTICLE WHERE content_id = :id");
+  $writeHashtags = !($options['nohashtag'] ?? true);
   $update = $options['nodb'] ? null : $db->prepare('UPDATE ARTICLE SET llm_summary = :summary,
-    llm_tags = :tags, llm_hashtags = :hashtags
+    llm_tags = :tags' . ($writeHashtags ? ', llm_hashtags = :hashtags' : '') . '
     WHERE content_id = :id AND transcript_vtt = :vtt AND title = :title');
   $processed = 0;
   $failed = 0;
@@ -420,11 +421,15 @@ function summarizeArticles(PDO $db, array $options, array $allowed, callable $ge
       fwrite(STDERR, "Summarizing [{$id}] {$row['title']}\n");
       $result = summarizeValidate($generate($row), $allowed);
       if ($update !== null) {
-        $update->execute([
+        $parameters = [
           ':summary' => $result['summary'], ':tags' => summarizeJson($result['tags']),
-          ':hashtags' => summarizeJson($result['hashtags']), ':id' => $id,
+          ':id' => $id,
           ':vtt' => $row['transcript_vtt'], ':title' => $row['title'],
-        ]);
+        ];
+        if ($writeHashtags) {
+          $parameters[':hashtags'] = summarizeJson($result['hashtags']);
+        }
+        $update->execute($parameters);
         if ($update->rowCount() !== 1) {
           throw new RuntimeException('Article changed during generation; result was not saved');
         }

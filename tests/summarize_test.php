@@ -159,7 +159,7 @@ try {
   $withoutOutput->exec('PRAGMA query_only = ON');
   check(summarizeArticles($withoutOutput, $options, $allowed, $generate) === 0, 'nodb works with read-only DB and missing output columns');
   rejects(fn() => summarizeCheckSchema($withoutOutput, false), 'write requires schema');
-  $write = ['content' => 'a', 'nodb' => false];
+  $write = ['content' => 'a', 'nodb' => false, 'nohashtag' => false];
   check(summarizeArticles($db, $write, $allowed, $generate) === 0, 'write succeeds');
   $saved = $db->query("SELECT * FROM ARTICLE WHERE content_id = 'a'")->fetch(PDO::FETCH_ASSOC);
   check($saved['llm_summary'] === $valid['summary'], 'five-line string stored');
@@ -179,6 +179,13 @@ try {
   check($db->query("SELECT * FROM ARTICLE WHERE content_id = 'a'")->fetch(PDO::FETCH_ASSOC) === $saved, 'failure preserves previous result');
   check(summarizeArticles($db, $write, [], fn() => summarizeJson($none)) === 0, 'save empty selection');
   check($db->query("SELECT llm_hashtags FROM ARTICLE WHERE content_id = 'a'")->fetchColumn() === '[]', 'no-match stored as empty array');
+
+  $preserveDb = testDatabase(true);
+  $preserveDb->exec("UPDATE ARTICLE SET llm_hashtags = '[\"#分類済み\"]' WHERE content_id = 'a'");
+  check(summarizeArticles($preserveDb, ['content' => 'a', 'nodb' => false, 'nohashtag' => true], [],
+    fn() => summarizeJson($none)) === 0, 'default summarization succeeds');
+  check($preserveDb->query("SELECT llm_hashtags FROM ARTICLE WHERE content_id = 'a'")->fetchColumn()
+    === '["#分類済み"]', 'default summarization preserves classifier hashtags');
 
   $calls = [];
   $skipWaits = [];

@@ -18,3 +18,8 @@ steps:
     run: php summarize.php
     depends:
       - get_transcript
+
+  - id: classify_topics
+    run: php classify_topics.php
+    depends:
+      - summarize
