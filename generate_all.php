@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 const ENTRIES_FILE = __DIR__ . '/settings.json';
+const YOUTUBE_FEED_UNAVAILABLE = 75;
 
 main();
 
@@ -12,6 +13,7 @@ function main(): void
   $databaseFile = resolveOutputPath(readString($entries, 'OUTPUT_PATH', 'configuration'));
   $databaseOption = '--database=' . $databaseFile;
   $processed = 0;
+  $skipped = 0;
   foreach (readEntryGroup($entries['CONTENTS'], 'podcasts') as $entry) {
     runPhpScript(__DIR__ . '/tools/podcast_load.php', [
       readSourceId($entry, 'podcasts'),
@@ -32,17 +34,26 @@ function main(): void
   }
 
   foreach (readEntryGroup($entries['CONTENTS'], 'youtube') as $entry) {
-    runPhpScript(__DIR__ . '/tools/youtube_load.php', [
+    $completed = runPhpScript(__DIR__ . '/tools/youtube_load.php', [
       readSourceId($entry, 'youtube'),
       readString($entry, 'pid', 'youtube'),
       $databaseOption,
-    ]);
-    $processed++;
+    ], [YOUTUBE_FEED_UNAVAILABLE]);
+    if ($completed) {
+      $processed++;
+    } else {
+      $skipped++;
+    }
   }
 
   fwrite(
     STDOUT,
-    sprintf("Processed %d web sources in SQLite: %s\n", $processed, $databaseFile)
+    sprintf(
+      "Processed %d web sources in SQLite; skipped %d unavailable YouTube feeds: %s\n",
+      $processed,
+      $skipped,
+      $databaseFile
+    )
   );
 }
 
@@ -141,7 +152,11 @@ function readString(array $entry, string $key, string $group): string
   return $value;
 }
 
-function runPhpScript(string $scriptPath, array $args): void
+function runPhpScript(
+  string $scriptPath,
+  array $args,
+  array $skippableExitCodes = []
+): bool
 {
   if (!is_file($scriptPath)) {
     fail("Script not found: {$scriptPath}");
@@ -171,9 +186,16 @@ function runPhpScript(string $scriptPath, array $args): void
   $exitCode = proc_close($process);
   fclose($output);
 
+  if (in_array($exitCode, $skippableExitCodes, true)) {
+    fwrite(STDERR, "Warning: Skipped temporarily unavailable source: {$scriptPath}\n");
+    return false;
+  }
+
   if ($exitCode !== 0) {
     fail("Script failed: {$scriptPath}", $exitCode);
   }
+
+  return true;
 }
 
 function fail(string $message, int $exitCode = 1): never

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 const DEFAULT_DATABASE_FILE = __DIR__ . '/../../user/data/mediadata.sqlite3';
+const FEED_UNAVAILABLE_EXIT_CODE = 75;
 
 main($argv);
 
@@ -21,18 +22,17 @@ function main(array $argv): void
 
   $feedContent = fetchUrlWithCurlFallback($atomUrl);
   if ($feedContent === false) {
-    fwrite(STDERR, "All attempts to fetch the YouTube feed failed.\n");
-    exit(1);
+    skipUnavailableFeed('All attempts to fetch the YouTube feed failed.');
   }
 
   $xml = simplexml_load_string($feedContent);
   if ($xml === false) {
-    fwrite(STDERR, "Failed to parse YouTube feed.\n");
+    fwrite(STDERR, "YouTube feed is temporarily unavailable: Failed to parse feed.\n");
     foreach (libxml_get_errors() as $error) {
       fwrite(STDERR, trim($error->message) . "\n");
     }
     libxml_clear_errors();
-    exit(1);
+    exit(FEED_UNAVAILABLE_EXIT_CODE);
   }
 
   $channelTitle = isset($xml->title) ? trim((string)$xml->title) : 'Unknown Channel';
@@ -352,6 +352,12 @@ function fail(string $message): never
 {
   fwrite(STDERR, $message . PHP_EOL);
   exit(1);
+}
+
+function skipUnavailableFeed(string $message): never
+{
+  fwrite(STDERR, "YouTube feed is temporarily unavailable: {$message}\n");
+  exit(FEED_UNAVAILABLE_EXIT_CODE);
 }
 
 /**
