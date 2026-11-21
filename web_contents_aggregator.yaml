@@ -29,3 +29,8 @@ steps:
     run: php upload_database.php
     depends:
       - classify_topics
+
+  - id: upload_notion
+    run: php upload_notion.php
+    depends:
+      - upload_database

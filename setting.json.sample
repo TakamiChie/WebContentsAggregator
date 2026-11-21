@@ -8,6 +8,13 @@
     "SSH_PUBLIC_KEY": "",
     "TIMEOUT": 300
   },
+  "NOTION_UPLOAD": {
+    "DATA_SOURCE_ID": "9f2e6df6-a37c-44c9-a195-d3ab9c955d97",
+    "TOKEN_ENV": "NOTION_TOKEN",
+    "API_VERSION": "2026-03-11",
+    "LOOKBACK_DAYS": 30,
+    "TIMEOUT": 60
+  },
   "TAG_COLLECTION_DIR": "",
   "LLM_MODEL": "",
   "CONTENTS": {
