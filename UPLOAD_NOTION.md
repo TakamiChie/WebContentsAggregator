@@ -39,6 +39,24 @@ $env:NOTION_TOKEN = 'secret_...'
 php upload_notion.php
 ```
 
+Dagu 2.27以降では、ホスト環境変数をDAGのステップへ確実に渡すため、ワークフローに次のシークレット宣言を入れています。値はYAMLや実行ログには保存されません。
+
+```yaml
+secrets:
+  - name: NOTION_TOKEN
+    provider: env
+    key: NOTION_TOKEN
+```
+
+確認には、トークン値を表示しない次のコマンドを使用できます。
+
+```powershell
+dagu validate web_contents_aggregator.yaml
+dagu dry web_contents_aggregator.yaml
+```
+
+dry-runログに `Resolving secrets` と `count=1` が表示されれば、Daguが環境変数を解決できています。
+
 ## 1記事を指定した動作確認
 
 `--content` は期間制限を無視し、指定した `content_id` の1件だけを処理します。まず `--dry-run` で選択結果を確認できます。
