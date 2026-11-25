@@ -13,6 +13,7 @@ function main(): void
   try {
     $settings = uploadReadSettings(UPLOAD_SETTINGS_FILE);
     $database = uploadResolvePath(uploadRequiredString($settings, 'OUTPUT_PATH'));
+    $exportDirectory = uploadResolvePath(uploadRequiredString($settings, 'SQL_EXPORT_DIR'));
     $uploadSettings = uploadRequiredObject($settings, 'DATABASE_UPLOAD');
     $url = uploadRequiredString($uploadSettings, 'URL', 'DATABASE_UPLOAD.URL');
 
@@ -36,6 +37,8 @@ function main(): void
 
     try {
       uploadCreateSnapshot($database, $snapshot);
+      $sqlFile = uploadExportArticles($snapshot, $exportDirectory);
+      fwrite(STDOUT, "Exported ARTICLE SQL to {$sqlFile}\n");
       uploadFile($snapshot, $url, $uploadSettings);
       fwrite(STDOUT, sprintf("Uploaded SQLite database (%d bytes) to %s\n", filesize($snapshot), uploadSafeUrl($url)));
     } finally {
@@ -61,6 +64,68 @@ function uploadCreateSnapshot(string $source, string $destination): void
 
   if (!is_file($destination) || filesize($destination) === 0) {
     throw new RuntimeException('Failed to create a consistent SQLite snapshot');
+  }
+}
+
+function uploadExportArticles(string $snapshot, string $directory): string
+{
+  if (!is_dir($directory) && !@mkdir($directory, 0777, true) && !is_dir($directory)) {
+    throw new RuntimeException("Cannot create SQL export directory: {$directory}");
+  }
+  $destination = $directory . DIRECTORY_SEPARATOR . 'ARTICLE.sql';
+  $temporary = tempnam($directory, 'article-');
+  if ($temporary === false) {
+    throw new RuntimeException("Cannot create a temporary SQL file in {$directory}");
+  }
+
+  try {
+    $db = new PDO('sqlite:' . $snapshot, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $columns = $db->query('PRAGMA table_info("ARTICLE")')->fetchAll(PDO::FETCH_COLUMN, 1);
+    if ($columns === []) {
+      throw new RuntimeException('ARTICLE table is missing from the SQLite snapshot');
+    }
+
+    $identifiers = array_map(static fn(string $column): string => '"' . str_replace('"', '""', $column) . '"', $columns);
+    $values = array_map(static function (string $column): string {
+      // SQLite quote() truncates text at NUL. Preserve such text as a hex literal cast back to TEXT.
+      return "CASE WHEN typeof({$column}) = 'text' AND instr({$column}, char(0)) > 0 "
+        . "THEN 'CAST(X''' || hex({$column}) || ''' AS TEXT)' ELSE quote({$column}) END";
+    }, $identifiers);
+    $rows = $db->query('SELECT ' . implode(', ', $values) . ' FROM "ARTICLE" ORDER BY "content_id"');
+    $insert = 'INSERT INTO "ARTICLE" (' . implode(', ', $identifiers) . ') VALUES (';
+
+    $file = fopen($temporary, 'wb');
+    if ($file === false) {
+      throw new RuntimeException("Cannot open temporary SQL file: {$temporary}");
+    }
+    try {
+      uploadWriteSql($file, "BEGIN TRANSACTION;\n");
+      while (($row = $rows->fetch(PDO::FETCH_NUM)) !== false) {
+        uploadWriteSql($file, $insert . implode(', ', $row) . ");\n");
+      }
+      uploadWriteSql($file, "COMMIT;\n");
+      if (!fflush($file)) {
+        throw new RuntimeException("Cannot flush SQL export: {$temporary}");
+      }
+    } finally {
+      fclose($file);
+    }
+
+    if (!rename($temporary, $destination)) {
+      throw new RuntimeException("Cannot save SQL export: {$destination}");
+    }
+    return $destination;
+  } finally {
+    if (is_file($temporary)) {
+      @unlink($temporary);
+    }
+  }
+}
+
+function uploadWriteSql($file, string $sql): void
+{
+  if (fwrite($file, $sql) !== strlen($sql)) {
+    throw new RuntimeException('Cannot write SQL export');
   }
 }
 

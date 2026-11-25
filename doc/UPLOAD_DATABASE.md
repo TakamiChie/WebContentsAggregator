@@ -1,12 +1,13 @@
 # データベースのリモートアップロード
 
-`upload_database.php` は `OUTPUT_PATH` の SQLite データベースから整合性のあるスナップショットを作成し、ワークフローの最後にリモートへアップロードします。HTTPS（PUT）、SFTP、SCP、FTP、FTPS など、実行環境の PHP/cURL が対応する URL を利用できます。
+`upload_database.php` は `OUTPUT_PATH` の SQLite データベースから整合性のあるスナップショットを作成します。同じスナップショットから `ARTICLE` テーブルの全行を SQL の `INSERT` 文に変換し、`SQL_EXPORT_DIR` に `ARTICLE.sql` として保存してから、SQLite ファイルをリモートへアップロードします。HTTPS（PUT）、SFTP、SCP、FTP、FTPS など、実行環境の PHP/cURL が対応する URL を利用できます。
 
-`settings.json` にアップロード先を設定してください。パスワードは JSON に直接保存せず、環境変数名を指定します。
+`settings.json` に SQL の保存先フォルダとアップロード先を設定してください。保存先フォルダがなければ作成し、既存の `ARTICLE.sql` はエクスポート完了時に置き換えます。パスワードは JSON に直接保存せず、環境変数名を指定します。
 
 ```json
 {
   "OUTPUT_PATH": "~/Documents/onpu-tamago.net.2026/user/data/mediadata.sqlite3",
+  "SQL_EXPORT_DIR": "~/Documents/onpu-tamago.net.2026/contents/sql",
   "DATABASE_UPLOAD": {
     "URL": "sftp://example.com/var/www/data/mediadata.sqlite3",
     "USERNAME": "deploy",
@@ -39,4 +40,4 @@ SSH 鍵を使う場合は、パスワード設定の代わりに次の項目を�
 php src/upload_database.php
 ```
 
-送信エラー時は終了コード 1 になり、Dagu のワークフローも失敗として記録されます。
+SQL の保存または SQLite ファイルの送信に失敗すると、終了コード 1 になり、Dagu のワークフローも失敗として記録されます。

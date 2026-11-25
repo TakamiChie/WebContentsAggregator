@@ -1,5 +1,6 @@
 {
   "OUTPUT_PATH": "",
+  "SQL_EXPORT_DIR": "",
   "DATABASE_UPLOAD": {
     "URL": "sftp://example.com/path/to/mediadata.sqlite3",
     "USERNAME": "",
