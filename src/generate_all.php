@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-const ENTRIES_FILE = __DIR__ . '/settings.json';
+const ENTRIES_FILE = __DIR__ . '/../settings.json';
 const YOUTUBE_FEED_UNAVAILABLE = 75;
 
 main();
@@ -176,7 +176,7 @@ function runPhpScript(
     $command,
     [0 => STDIN, 1 => $output, 2 => STDERR],
     $pipes,
-    __DIR__
+    dirname(__DIR__)
   );
   if (!is_resource($process)) {
     fclose($output);

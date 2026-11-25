@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-const UPLOAD_SETTINGS_FILE = __DIR__ . '/settings.json';
+const UPLOAD_SETTINGS_FILE = __DIR__ . '/../settings.json';
 
 if (!defined('UPLOAD_DATABASE_NO_MAIN')) {
   main();

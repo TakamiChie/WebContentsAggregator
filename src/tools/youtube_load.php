@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-const DEFAULT_DATABASE_FILE = __DIR__ . '/../../user/data/mediadata.sqlite3';
+const DEFAULT_DATABASE_FILE = __DIR__ . '/../../../user/data/mediadata.sqlite3';
 const FEED_UNAVAILABLE_EXIT_CODE = 75;
 
 main($argv);
@@ -217,7 +217,7 @@ function usage(?string $error = null, int $exitCode = 2): never
     $exitCode === 0 ? STDOUT : STDERR,
     <<<TEXT
 Usage:
-  php tools/youtube_load.php <source_id> <playlist_id> [options]
+  php src/tools/youtube_load.php <source_id> <playlist_id> [options]
 
 Options:
   --database=<file>   SQLite file (default: user/data/mediadata.sqlite3)

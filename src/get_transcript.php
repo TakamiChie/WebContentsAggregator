@@ -23,7 +23,7 @@ function transcriptMain(array $argv): int
   $database = null;
   foreach (array_slice($argv, 1) as $arg) {
     if ($arg === '--help' || $arg === '-h') {
-      fwrite(STDOUT, "Usage: php get_transcript.php [--database=/path/to/mediadata.sqlite3]\nDB: OUTPUT_PATH in setting.json (fallback: settings.json)\n");
+      fwrite(STDOUT, "Usage: php src/get_transcript.php [--database=/path/to/mediadata.sqlite3]\nDB: OUTPUT_PATH in setting.json (fallback: settings.json)\n");
       return 0;
     }
     if (!str_starts_with($arg, '--database=') || substr($arg, 11) === '') {
@@ -31,7 +31,7 @@ function transcriptMain(array $argv): int
     }
     $database = substr($arg, 11);
   }
-  $database ??= transcriptDatabasePath(__DIR__);
+  $database ??= transcriptDatabasePath(dirname(__DIR__));
   if (!is_file($database)) {
     throw new RuntimeException("SQLite database file does not exist: {$database}");
   }

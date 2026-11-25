@@ -39,7 +39,7 @@ PHPの `curl` / `pdo_sqlite` 拡張と、既存の Composer 依存（`composer i
 
 - `LLM_MODEL`: 指定したモデルIDを送信します。省略・空文字列・`null` のときはリクエストの `model` を省略し、LM Studio の選択に任せます。
 - `LLM_API_URL`: 任意。省略時は上記URLです。変更する場合はローカルLLMの Chat Completions エンドポイント全体を指定します。
-- パスは `~` をホームディレクトリに展開します。既存設定と同様に `~Documents/...` も扱います。相対パスの基準はこのスクリプトのディレクトリです。
+- パスは `~` をホームディレクトリに展開します。既存設定と同様に `~Documents/...` も扱います。相対パスの基準はリポジトリのルートディレクトリです。
 
 候補は `TAG_COLLECTION_DIR` 以下の `.md`（サブディレクトリを含む）のYAMLフロントマターの `hashtags` から収集します。文字列（カンマ・空白区切り）またはYAML配列に対応し、先頭の `#` は有無どちらでも構いません。重複を除き、`#`付きに統一します。本文の見出しやURLのアンカーは収集しません。
 
@@ -59,25 +59,25 @@ hashtags: [地域コミュニティ支援, 山手縁乃庭]
 
 ```shell
 # 文字起こしがある未生成の記事を生成・保存（記事選定用ハッシュタグなし）
-php summarize.php
+php src/summarize.php
 
 # content_idを指定した1記事を生成・保存
-php summarize.php --content="対象のcontent_id"
+php src/summarize.php --content="対象のcontent_id"
 
 # DBに書き込まず、1記事の生成結果を確認（--content ID の形式も可）
-php summarize.php --content "対象のcontent_id" --nodb
+php src/summarize.php --content "対象のcontent_id" --nodb
 
 # MDの候補を使用して記事選定用ハッシュタグも生成
-php summarize.php --content "対象のcontent_id" --nodb --with-hashtags
+php src/summarize.php --content "対象のcontent_id" --nodb --with-hashtags
 
 # 全対象記事を生成し、標準出力にJSON Linesで出力
-php summarize.php --nodb
+php src/summarize.php --nodb
 
 # 記事間の待ち時間を5秒に変更（0で待機なし）
-php summarize.php --cooldown=5
+php src/summarize.php --cooldown=5
 
 # 候補ハッシュタグ・ページ説明を渡さず、1記事の生成結果を比較検証
-php summarize.php --content "対象のcontent_id" --nodb --nohashtag
+php src/summarize.php --content "対象のcontent_id" --nodb --nohashtag
 
 # ローカルLLM不要の回帰テスト
 php tests/summarize_test.php

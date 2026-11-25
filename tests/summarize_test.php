@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../summarize.php';
+require_once __DIR__ . '/../src/summarize.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 
 $checks = 0;

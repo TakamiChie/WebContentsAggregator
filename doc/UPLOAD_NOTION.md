@@ -36,7 +36,7 @@ Notionでインテグレーションを作成し、「音声配信原稿」デ�
 
 ```powershell
 $env:NOTION_TOKEN = 'secret_...'
-php upload_notion.php
+php src/upload_notion.php
 ```
 
 Dagu 2.27以降では、ホスト環境変数をDAGのステップへ確実に渡すため、ワークフローに次のシークレット宣言を入れています。値はYAMLや実行ログには保存されません。
@@ -62,15 +62,15 @@ dry-runログに `Resolving secrets` と `count=1` が表示されれば、Dagu�
 `--content` は期間制限を無視し、指定した `content_id` の1件だけを処理します。まず `--dry-run` で選択結果を確認できます。
 
 ```powershell
-php upload_notion.php --content=c0554bcd-9395-4efe-bb4e-da8e635d05eb --dry-run
-php upload_notion.php --content=c0554bcd-9395-4efe-bb4e-da8e635d05eb --force
+php src/upload_notion.php --content=c0554bcd-9395-4efe-bb4e-da8e635d05eb --dry-run
+php src/upload_notion.php --content=c0554bcd-9395-4efe-bb4e-da8e635d05eb --force
 ```
 
 過去分をすべて同期する場合は `--all`、同期ハッシュが同じ記事も再送する場合は `--force` を使います。
 
 ```powershell
-php upload_notion.php --all
-php upload_notion.php --content=<content_id> --force
+php src/upload_notion.php --all
+php src/upload_notion.php --content=<content_id> --force
 ```
 
 ## Notionデータベースのプロパティ

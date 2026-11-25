@@ -5,8 +5,8 @@
 ## 分布を解析する（DBへ保存しない）
 
 ```powershell
-php classify_topics.php --analyze --top 50
-php classify_topics.php --analyze --top 50 | Set-Content -Encoding utf8 out/topic-tag-distribution.json
+php src/classify_topics.php --analyze --top 50
+php src/classify_topics.php --analyze --top 50 | Set-Content -Encoding utf8 out/topic-tag-distribution.json
 ```
 
 全ポッドキャストを集計し、記事数、生成済み／未生成／不正なタグ数、タグごとの出現記事数、出現頻度のヒストグラム、トピックに対応した記事数、同じ記事に付いたタグの共起をJSONで出力します。1記事の重複タグは1件と数えます。ヒストグラムは `--top` に関係なく全タグを集計します。個別タグも全て出力したい場合は、異なるタグ数以上の `--top` を指定してください。
@@ -52,17 +52,17 @@ topic_classifier:
 
 ```powershell
 # 保存せず確認
-php classify_topics.php --nodb --limit 10
+php src/classify_topics.php --nodb --limit 10
 
 # 差分を保存
-php classify_topics.php
+php src/classify_topics.php
 
 # llm_hashtags のみ全件再生成
-php classify_topics.php --force
+php src/classify_topics.php --force
 
 # 特定記事、別設定、ブログ・動画も含める場合
-php classify_topics.php --content "対象のcontent_id" --force
-php classify_topics.php --settings test-settings.json --all-types
+php src/classify_topics.php --content "対象のcontent_id" --force
+php src/classify_topics.php --settings test-settings.json --all-types
 ```
 
 必要な設定は既存の `OUTPUT_PATH` と `TAG_COLLECTION_DIR` だけです。PHPの `pdo_sqlite` / `mbstring` / `intl` と既存のComposer依存を使用します。LM Studioは起動不要です。`LLM_MODEL` / `LLM_API_URL` / `CLASSIFY_MODEL` / `CLASSIFY_CHUNK_CHARS` は参照しません。旧 `--cooldown` オプションは廃止しました。

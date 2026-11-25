@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-const NOTION_UPLOAD_SETTINGS_FILE = __DIR__ . '/settings.json';
+const NOTION_UPLOAD_SETTINGS_FILE = __DIR__ . '/../settings.json';
 const NOTION_UPLOAD_DEFAULT_VERSION = '2026-03-11';
 const NOTION_UPLOAD_DEFAULT_BASE_URL = 'https://api.notion.com';
 const NOTION_UPLOAD_HASH_VERSION = 3;
@@ -27,7 +27,7 @@ function notionMain(array $argv): int
   $options = notionOptions($argv);
   if ($options['help']) {
     fwrite(STDOUT,
-      "Usage: php upload_notion.php [--content=<content_id>] [--all] [--force] [--dry-run]\n"
+      "Usage: php src/upload_notion.php [--content=<content_id>] [--all] [--force] [--dry-run]\n"
       . "  --content <content_id>  Upload exactly one article, regardless of the lookback period\n"
       . "  --all                   Backfill every eligible article from the two supported podcasts\n"
       . "  --force                 Upload even when the stored content hash is unchanged\n"

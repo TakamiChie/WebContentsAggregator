@@ -1,7 +1,7 @@
 <?php
 
 declare(strict_types=1);
-require_once __DIR__ . '/../classify_topics.php';
+require_once __DIR__ . '/../src/classify_topics.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 
 $checks = 0;

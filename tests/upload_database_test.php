@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 define('UPLOAD_DATABASE_NO_MAIN', true);
-require dirname(__DIR__) . '/upload_database.php';
+require dirname(__DIR__) . '/src/upload_database.php';
 
 $directory = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'upload-database-test-' . bin2hex(random_bytes(6));
 if (!mkdir($directory)) {

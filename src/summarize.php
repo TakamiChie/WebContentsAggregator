@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-// Required ARTICLE columns (apply manually; see SUMMARIZE.md):
+// Required ARTICLE columns (apply manually; see doc/SUMMARIZE.md):
 // llm_summary TEXT DEFAULT NULL, llm_tags TEXT DEFAULT NULL, llm_hashtags TEXT DEFAULT NULL.
 if (PHP_SAPI !== 'cli') {
   http_response_code(403);
@@ -22,14 +22,14 @@ function summarizeMain(array $argv): int
 {
   $options = summarizeOptions($argv);
   if ($options['help']) {
-    fwrite(STDOUT, "Usage: php summarize.php [--content=<content_id>] [--nodb] [--with-hashtags] [--cooldown=seconds]\n"
+    fwrite(STDOUT, "Usage: php src/summarize.php [--content=<content_id>] [--nodb] [--with-hashtags] [--cooldown=seconds]\n"
       . "  --content <content_id>  Process one article (also accepts --content=<id>)\n"
       . "  --nodb                 Print JSON Lines without writing to SQLite\n"
       . "  --cooldown <seconds>   Wait between articles (default: 20; also --cooldown=N)\n"
       . "  --nohashtag            Explicitly use the default: no hashtag candidates\n"
       . "  --with-hashtags        Load selection hashtag candidates from TAG_COLLECTION_DIR\n"
       . "  -h, --help             Show this help\n"
-      . "Configuration: settings.json; required schema: SUMMARIZE.md\n");
+      . "Configuration: settings.json; required schema: doc/SUMMARIZE.md\n");
     return 0;
   }
   foreach (['pdo_sqlite', 'curl'] as $extension) {
@@ -37,8 +37,8 @@ function summarizeMain(array $argv): int
       throw new RuntimeException("The PHP {$extension} extension is required");
     }
   }
-  require_once __DIR__ . '/vendor/autoload.php';
-  $settings = json_decode(summarizeRead(__DIR__ . '/settings.json'), true, 512, JSON_THROW_ON_ERROR);
+  require_once __DIR__ . '/../vendor/autoload.php';
+  $settings = json_decode(summarizeRead(__DIR__ . '/../settings.json'), true, 512, JSON_THROW_ON_ERROR);
   if (!is_array($settings)) {
     throw new RuntimeException('settings.json must contain an object');
   }
@@ -68,8 +68,8 @@ function summarizeMain(array $argv): int
   $catalog = $options['nohashtag'] ? [] : summarizeTagCatalog(
     summarizePath($settings['TAG_COLLECTION_DIR'] ?? null, 'TAG_COLLECTION_DIR')
   );
-  $system = summarizeRead(__DIR__ . '/prompt/summarize-system.txt');
-  $user = summarizeRead(__DIR__ . '/prompt/summarize-user.txt');
+  $system = summarizeRead(__DIR__ . '/../prompt/summarize-system.txt');
+  $user = summarizeRead(__DIR__ . '/../prompt/summarize-user.txt');
   $allowed = array_column($catalog, 'hashtag');
   $schema = summarizeSchema($allowed);
   fwrite(STDERR, $options['nohashtag']
@@ -146,7 +146,7 @@ function summarizePath(mixed $path, string $key): string
     return rtrim($userDirectory, '/\\') . DIRECTORY_SEPARATOR . ltrim(substr($path, 1), '/\\');
   }
   if ($path[0] !== '/' && $path[0] !== '\\' && !preg_match('/^[A-Za-z]:[\\\\\/]/', $path)) {
-    return __DIR__ . DIRECTORY_SEPARATOR . $path;
+    return dirname(__DIR__) . DIRECTORY_SEPARATOR . $path;
   }
   return $path;
 }
@@ -210,7 +210,7 @@ function summarizeCheckSchema(PDO $db, bool $nodb): void
   $missing = array_diff($required, $columns);
   if ($missing !== []) {
     throw new RuntimeException('Missing ARTICLE columns: ' . implode(', ', $missing)
-      . '. Apply the schema in SUMMARIZE.md manually, or use --nodb to preview without output columns.');
+      . '. Apply the schema in doc/SUMMARIZE.md manually, or use --nodb to preview without output columns.');
   }
 }
 
@@ -249,7 +249,7 @@ function summarizeJson(mixed $value): string
 
 function summarizeSchema(array $allowed): array
 {
-  $schema = json_decode(summarizeRead(__DIR__ . '/prompt/summarize.schema.json'), true, 512, JSON_THROW_ON_ERROR);
+  $schema = json_decode(summarizeRead(__DIR__ . '/../prompt/summarize.schema.json'), true, 512, JSON_THROW_ON_ERROR);
   if ($allowed === []) {
     // Some LM Studio runtimes compile maxItems: 0 into an invalid {-1} grammar.
     // A constant empty array avoids that conversion and still forbids all hashtags.

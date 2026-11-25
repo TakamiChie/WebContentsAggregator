@@ -13,7 +13,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 function classifyOptions(array $argv): array
 {
   $options = ['content' => null, 'nodb' => false, 'force' => false, 'all-types' => false,
-    'analyze' => false, 'limit' => 0, 'top' => 30, 'settings' => __DIR__ . '/settings.json', 'help' => false];
+    'analyze' => false, 'limit' => 0, 'top' => 30, 'settings' => __DIR__ . '/../settings.json', 'help' => false];
   for ($i = 1; $i < count($argv); $i++) {
     $arg = $argv[$i];
     if ($arg === '-h' || $arg === '--help') { $options['help'] = true; continue; }
@@ -46,21 +46,21 @@ function classifyMain(array $argv): int
 {
   $options = classifyOptions($argv);
   if ($options['help']) {
-    fwrite(STDOUT, "Usage: php classify_topics.php [--analyze] [--nodb] [--force] [--content ID]\n"
+    fwrite(STDOUT, "Usage: php src/classify_topics.php [--analyze] [--nodb] [--force] [--content ID]\n"
       . "  --analyze       Read-only tag frequencies and topic co-occurrence report (JSON)\n"
       . "  --nodb          Preview classifications without any DB writes (JSON Lines)\n"
       . "  --force         Recompute all selected tag classifications\n"
       . "  --limit N       Maximum articles to process; 0 = unlimited (not used by --analyze)\n"
       . "  --top N         Number of tags/candidates per analysis section (default 30)\n"
       . "  --all-types     Include blogs/videos as well as podcasts\n"
-      . "  --settings FILE Alternate settings.json (relative to script directory)\n"
+      . "  --settings FILE Alternate settings.json (relative to the project root)\n"
       . "No AI or transcript processing; existing summary rejects incidental mentions.\n");
     return 0;
   }
   foreach (['pdo_sqlite', 'mbstring', 'intl'] as $extension) {
     if (!extension_loaded($extension)) { throw new RuntimeException("The PHP {$extension} extension is required"); }
   }
-  require_once __DIR__ . '/vendor/autoload.php';
+  require_once __DIR__ . '/../vendor/autoload.php';
   $settings = json_decode(summarizeRead(summarizePath($options['settings'], 'settings')), true, 512, JSON_THROW_ON_ERROR);
   if (!is_array($settings)) { throw new RuntimeException('Settings must be an object'); }
   $catalog = classifyCatalog(summarizePath($settings['TAG_COLLECTION_DIR'] ?? null, 'TAG_COLLECTION_DIR'));

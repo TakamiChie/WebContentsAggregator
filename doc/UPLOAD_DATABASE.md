@@ -36,7 +36,7 @@ SSH 鍵を使う場合は、パスワード設定の代わりに次の項目を�
 単独で確認する場合は次を実行します。
 
 ```sh
-php upload_database.php
+php src/upload_database.php
 ```
 
 送信エラー時は終了コード 1 になり、Dagu のワークフローも失敗として記録されます。

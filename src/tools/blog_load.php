@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-const DEFAULT_DATABASE_FILE = __DIR__ . '/../../user/data/mediadata.sqlite3';
+const DEFAULT_DATABASE_FILE = __DIR__ . '/../../../user/data/mediadata.sqlite3';
 
 $options = parseArguments($argv);
 $atomUrl = $options['feed_url'];
@@ -311,7 +311,7 @@ function usage(?string $error = null, int $exitCode = 2): never
     $exitCode === 0 ? STDOUT : STDERR,
     <<<TEXT
 Usage:
-  php tools/blog_load.php <source_id> <feed_url> [options]
+  php src/tools/blog_load.php <source_id> <feed_url> [options]
 
 Options:
   --database=<file>   SQLite file (default: user/data/mediadata.sqlite3)

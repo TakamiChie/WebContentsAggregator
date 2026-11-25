@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 define('UPLOAD_NOTION_NO_MAIN', true);
-require dirname(__DIR__) . '/upload_notion.php';
+require dirname(__DIR__) . '/src/upload_notion.php';
 
 function assertSameValue(mixed $expected, mixed $actual, string $message): void
 {
