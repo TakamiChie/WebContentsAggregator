@@ -97,7 +97,7 @@ function readString(array $entry, string $key, string $group): string
   return $value;
 }
 
-function parseCollectionOptions(array $argv, ?string $settings = null): array
+function parseCollectionOptions(array $argv, ?string $settings = null, bool $allowPageRange = false): array
 {
   $options = ['blog-id' => null, 'blog-page' => null];
   if ($settings !== null) {
@@ -130,8 +130,10 @@ function parseCollectionOptions(array $argv, ?string $settings = null): array
     if ($options['blog-id'] === null) {
       throw new RuntimeException('--blog-page requires --blog-id');
     }
-    if (!preg_match('/\A[1-9][0-9]*\z/', $options['blog-page'])) {
-      throw new RuntimeException('--blog-page must be a positive integer');
+    $pagePattern = $allowPageRange ? '/\A[1-9][0-9]*(?:-[1-9][0-9]*)?\z/' : '/\A[1-9][0-9]*\z/';
+    if (!preg_match($pagePattern, $options['blog-page'])) {
+      $expected = $allowPageRange ? 'a positive page number or a range like 3-10' : 'a positive integer';
+      throw new RuntimeException("--blog-page must be {$expected}");
     }
   }
   $options['settings'] ??= $settings;
