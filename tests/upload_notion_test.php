@@ -31,8 +31,9 @@ assertSameValue('2026-11-20', $payload['properties']['日付']['date']['start'],
 assertSameValue('概要1' . "\n" . '概要2', $payload['properties']['LLM概要']['rich_text'][0]['text']['content'], 'Summary should be a property');
 assertSameValue('地域, 技術', $payload['properties']['LLMタグ']['rich_text'][0]['text']['content'], 'Tags should be a text property');
 
-$transcript = notionTranscriptText("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n最初の文\n\n00:00:01.000 --> 00:00:02.000\n次の文");
+$transcript = notionFulltext("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n最初の文\n\n00:00:01.000 --> 00:00:02.000\n次の文");
 assertSameValue("最初の文\n\n次の文", $transcript, 'WebVTT cues should become readable paragraphs');
+assertSameValue("本文\n\n次の段落", notionFulltext("  本文\n\n次の段落  "), 'Plain text should retain paragraph breaks');
 
 $calls = [];
 $topLevel = [
@@ -86,7 +87,7 @@ $article = [
   'title' => '2026/11/20 テスト記事',
   'url' => 'https://listen.style/p/takamichie/test',
   'published_at' => '2026-11-20T07:00:00+09:00',
-  'transcript_vtt' => "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n文字起こし",
+  'fulltext' => "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n文字起こし",
   'llm_summary' => "概要1\n概要2\n概要3\n概要4\n概要5",
   'llm_tags' => '[]',
   'llm_hashtags' => '[]',
@@ -112,7 +113,7 @@ try {
   $db->exec('CREATE TABLE SOURCE (id INTEGER PRIMARY KEY, source_cn TEXT NOT NULL)');
   $db->exec('CREATE TABLE ARTICLE (
     content_id TEXT PRIMARY KEY, source_id INTEGER, title TEXT, url TEXT, published_at TEXT,
-    transcript_vtt TEXT, llm_summary TEXT, llm_tags TEXT, llm_hashtags TEXT
+    fulltext TEXT, llm_summary TEXT, llm_tags TEXT, llm_hashtags TEXT
   )');
   $db->exec("INSERT INTO SOURCE VALUES (1, 'takamichie'), (2, 'other')");
   $insert = $db->prepare('INSERT INTO ARTICLE VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');

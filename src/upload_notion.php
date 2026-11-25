@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/webvtt.php';
+
 const NOTION_UPLOAD_SETTINGS_FILE = __DIR__ . '/../settings.json';
 const NOTION_UPLOAD_DEFAULT_VERSION = '2026-03-11';
 const NOTION_UPLOAD_DEFAULT_BASE_URL = 'https://api.notion.com';
@@ -61,7 +63,7 @@ function notionMain(array $argv): int
   notionEnsureSyncTable($db);
   $articles = notionSelectArticles($db, $options, $configuration['lookback_days']);
   if ($articles === [] && $options['content'] !== null) {
-    throw new RuntimeException('Article not found, unsupported, or missing transcript/LLM summary: ' . $options['content']);
+    throw new RuntimeException('Article not found, unsupported, or missing full text/LLM summary: ' . $options['content']);
   }
 
   $token = '';
@@ -241,7 +243,7 @@ function notionResolvePath(string $path): string
 function notionCheckSchema(PDO $db): void
 {
   $columns = $db->query('PRAGMA table_info(ARTICLE)')->fetchAll(PDO::FETCH_COLUMN, 1);
-  $required = ['content_id', 'source_id', 'title', 'url', 'published_at', 'transcript_vtt', 'llm_summary'];
+  $required = ['content_id', 'source_id', 'title', 'url', 'published_at', 'fulltext', 'llm_summary'];
   $missing = array_diff($required, $columns);
   if ($missing !== []) {
     throw new RuntimeException('Missing ARTICLE columns: ' . implode(', ', $missing));
@@ -261,11 +263,11 @@ function notionEnsureSyncTable(PDO $db): void
 
 function notionSelectArticles(PDO $db, array $options, int $lookbackDays): array
 {
-  $sql = "SELECT a.content_id, a.title, a.url, a.published_at, a.transcript_vtt, a.llm_summary,
+  $sql = "SELECT a.content_id, a.title, a.url, a.published_at, a.fulltext, a.llm_summary,
       a.llm_tags, a.llm_hashtags, s.source_cn
     FROM ARTICLE a INNER JOIN SOURCE s ON s.id = a.source_id
     WHERE s.source_cn IN ('takamichie', 'takamichie_gameonly')
-      AND ((a.transcript_vtt IS NOT NULL AND trim(a.transcript_vtt) <> '')
+      AND ((a.fulltext IS NOT NULL AND trim(a.fulltext) <> '')
         OR (a.llm_summary IS NOT NULL AND trim(a.llm_summary) <> ''))";
   $parameters = [];
   if ($options['content'] !== null) {
@@ -286,7 +288,7 @@ function notionArticleHash(array $article): string
   return hash('sha256', json_encode([
     NOTION_UPLOAD_HASH_VERSION,
     $article['source_cn'], $article['title'], $article['url'], $article['published_at'],
-    $article['transcript_vtt'], $article['llm_summary'], $article['llm_tags'], $article['llm_hashtags'],
+    $article['fulltext'], $article['llm_summary'], $article['llm_tags'], $article['llm_hashtags'],
   ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
 }
 
@@ -341,9 +343,9 @@ function notionUploadArticle(array $article, array $configuration, string $token
   $request('PATCH', '/v1/pages/' . rawurlencode($pageId), [
     'properties' => notionGeneratedProperties($article),
   ]);
-  $transcript = notionTranscriptText((string)($article['transcript_vtt'] ?? ''));
-  if ($transcript !== '') {
-    notionReplaceHeadingSection($pageId, '文字起こし', notionParagraphBlocks($transcript), $request, ['見出し']);
+  $fulltext = notionFulltext((string)($article['fulltext'] ?? ''));
+  if ($fulltext !== '') {
+    notionReplaceHeadingSection($pageId, '文字起こし', notionParagraphBlocks($fulltext), $request, ['見出し']);
   }
 
   $url = is_string($page['url'] ?? null) ? $page['url'] : 'https://www.notion.so/' . str_replace('-', '', $pageId);
@@ -557,6 +559,11 @@ function notionRichTextPlain(array $richText): string
     }
   }
   return $text;
+}
+
+function notionFulltext(string $text): string
+{
+  return hasWebVttHeader($text) ? notionTranscriptText($text) : trim($text);
 }
 
 function notionTranscriptText(string $vtt): string

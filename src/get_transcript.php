@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
-// Required schema (apply manually): ARTICLE.transcript_vtt TEXT NULL DEFAULT NULL.
-// Stores the complete WebVTT document; NULL or an empty string means not downloaded.
+require_once __DIR__ . '/webvtt.php';
+
+// Schema: ARTICLE.fulltext TEXT DEFAULT NULL.
+// Stores complete WebVTT documents for episodes with no full text.
 if (PHP_SAPI !== 'cli') {
   http_response_code(403);
   exit('CLI only');
@@ -43,8 +45,8 @@ function transcriptMain(array $argv): int
     PDO::ATTR_TIMEOUT => 5,
   ]);
   $columns = $db->query('PRAGMA table_info(ARTICLE)')->fetchAll(PDO::FETCH_COLUMN, 1);
-  if (!in_array('transcript_vtt', $columns, true)) {
-    throw new RuntimeException('Required column missing: ARTICLE.transcript_vtt (TEXT NULL DEFAULT NULL). Add it before running this script.');
+  if (!in_array('fulltext', $columns, true)) {
+    throw new RuntimeException('Required column missing: ARTICLE.fulltext (TEXT NULL DEFAULT NULL). Apply the database schema migration before running this script.');
   }
   return collectTranscripts($db, 'downloadTranscript');
 }
@@ -104,11 +106,11 @@ function collectTranscripts(PDO $db, callable $download): int
   $rows = $db->query("SELECT a.content_id, a.url FROM ARTICLE a
     INNER JOIN SOURCE s ON s.id = a.source_id
     WHERE s.source_type = 'podcast'
-      AND (a.transcript_vtt IS NULL)
+      AND (a.fulltext IS NULL OR a.fulltext = '')
     ORDER BY a.content_id")->fetchAll(PDO::FETCH_ASSOC);
-  $update = $db->prepare("UPDATE ARTICLE SET transcript_vtt = :vtt
+  $update = $db->prepare("UPDATE ARTICLE SET fulltext = :vtt
     WHERE content_id = :id AND url = :url
-      AND (transcript_vtt IS NULL OR transcript_vtt = '')");
+      AND (fulltext IS NULL OR fulltext = '')");
   $saved = 0;
   $failed = 0;
   foreach ($rows as $row) {
@@ -123,7 +125,7 @@ function collectTranscripts(PDO $db, callable $download): int
         // Throttle failed requests as well as successful downloads.
         usleep(1000000);
       }
-      if (!is_string($vtt) || !preg_match('/\A(?:\xEF\xBB\xBF)?WEBVTT(?:[ \t][^\r\n]*)?(?:\r\n|\r|\n)/', $vtt)) {
+      if (!is_string($vtt) || !hasWebVttHeader($vtt)) {
         throw new RuntimeException('Invalid WebVTT format');
       }
       $update->execute([':vtt' => $vtt, ':id' => $row['content_id'], ':url' => $row['url']]);

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/webvtt.php';
+
 // Required ARTICLE columns (apply manually; see doc/SUMMARIZE.md):
 // llm_summary TEXT DEFAULT NULL, llm_tags TEXT DEFAULT NULL, llm_hashtags TEXT DEFAULT NULL.
 if (PHP_SAPI !== 'cli') {
@@ -76,9 +78,9 @@ function summarizeMain(array $argv): int
     ? "Selection hashtags disabled (default)\n"
     : 'Collected selection hashtags: ' . count($allowed) . "\n");
   return summarizeArticles($db, $options, $allowed, static function (array $row) use ($catalog, $system, $user, $schema, $model, $endpoint): string {
-    $text = summarizeTranscript($row['transcript_vtt']);
+    $text = summarizeFulltext($row['fulltext']);
     if ($text === '') {
-      throw new RuntimeException('Transcript contains no cue text');
+      throw new RuntimeException('Article contains no usable text');
     }
     $payload = summarizePayload($model, $system, $user, $schema, $catalog, $row['title'], $text);
     return summarizeRequest($endpoint, $payload);
@@ -203,7 +205,7 @@ function summarizeTagCatalog(string $directory): array
 function summarizeCheckSchema(PDO $db, bool $nodb): void
 {
   $columns = $db->query('PRAGMA table_info(ARTICLE)')->fetchAll(PDO::FETCH_COLUMN, 1);
-  $required = ['content_id', 'title', 'transcript_vtt'];
+  $required = ['content_id', 'title', 'fulltext'];
   if (!$nodb) {
     $required = array_merge($required, ['llm_summary', 'llm_tags', 'llm_hashtags']);
   }
@@ -212,6 +214,11 @@ function summarizeCheckSchema(PDO $db, bool $nodb): void
     throw new RuntimeException('Missing ARTICLE columns: ' . implode(', ', $missing)
       . '. Apply the schema in doc/SUMMARIZE.md manually, or use --nodb to preview without output columns.');
   }
+}
+
+function summarizeFulltext(string $text): string
+{
+  return hasWebVttHeader($text) ? summarizeTranscript($text) : trim($text);
 }
 
 /** Extract cue payloads, preserving order and ignoring WebVTT metadata. */
@@ -260,13 +267,13 @@ function summarizeSchema(array $allowed): array
   return $schema;
 }
 
-function summarizePayload(string $model, string $system, string $user, array $schema, array $catalog, string $title, string $transcript): array
+function summarizePayload(string $model, string $system, string $user, array $schema, array $catalog, string $title, string $text): array
 {
   $payload = [
     'messages' => [
       ['role' => 'system', 'content' => $system],
       ['role' => 'user', 'content' => strtr($user, [
-        '{{ARTICLE_JSON}}' => summarizeJson(['title' => $title, 'transcript' => $transcript]),
+        '{{ARTICLE_JSON}}' => summarizeJson(['title' => $title, 'fulltext' => $text]),
         '{{TAG_CATALOG_JSON}}' => summarizeJson($catalog),
       ])],
     ],
@@ -378,8 +385,8 @@ function summarizeValidate(string $json, array $allowed): array
 function summarizeArticles(PDO $db, array $options, array $allowed, callable $generate, ?callable $wait = null): int
 {
   summarizeCheckSchema($db, $options['nodb']);
-  // Fetch only IDs up front: do not keep all transcripts or an active read cursor during inference.
-  $query = "SELECT content_id FROM ARTICLE WHERE transcript_vtt IS NOT NULL AND trim(transcript_vtt) <> ''";
+  // Fetch only IDs up front: do not keep all article texts or an active read cursor during inference.
+  $query = "SELECT content_id FROM ARTICLE WHERE fulltext IS NOT NULL AND trim(fulltext) <> ''";
   $params = [];
   if ($options['content'] !== null) {
     $query .= ' AND content_id = :id';
@@ -390,14 +397,14 @@ function summarizeArticles(PDO $db, array $options, array $allowed, callable $ge
   $ids = $select->fetchAll(PDO::FETCH_COLUMN);
   $select->closeCursor();
   if ($ids === [] && $options['content'] !== null) {
-    throw new RuntimeException('Article not found or transcript_vtt is empty: ' . $options['content']);
+    throw new RuntimeException('Article not found or fulltext is empty: ' . $options['content']);
   }
-  $columns = 'content_id, title, transcript_vtt' . ($options['nodb'] ? '' : ', llm_summary, llm_tags');
+  $columns = 'content_id, title, fulltext' . ($options['nodb'] ? '' : ', llm_summary, llm_tags');
   $read = $db->prepare("SELECT {$columns} FROM ARTICLE WHERE content_id = :id");
   $writeHashtags = !($options['nohashtag'] ?? true);
   $update = $options['nodb'] ? null : $db->prepare('UPDATE ARTICLE SET llm_summary = :summary,
     llm_tags = :tags' . ($writeHashtags ? ', llm_hashtags = :hashtags' : '') . '
-    WHERE content_id = :id AND transcript_vtt = :vtt AND title = :title');
+    WHERE content_id = :id AND fulltext = :fulltext AND title = :title');
   $processed = 0;
   $failed = 0;
   $cooldown = $options['cooldown'] ?? 20;
@@ -424,7 +431,7 @@ function summarizeArticles(PDO $db, array $options, array $allowed, callable $ge
         $parameters = [
           ':summary' => $result['summary'], ':tags' => summarizeJson($result['tags']),
           ':id' => $id,
-          ':vtt' => $row['transcript_vtt'], ':title' => $row['title'],
+          ':fulltext' => $row['fulltext'], ':title' => $row['title'],
         ];
         if ($writeHashtags) {
           $parameters[':hashtags'] = summarizeJson($result['hashtags']);

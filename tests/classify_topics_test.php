@@ -19,7 +19,7 @@ function database(): PDO {
   $db->exec("CREATE TABLE SOURCE(id INTEGER PRIMARY KEY,source_type TEXT);
     INSERT INTO SOURCE VALUES(1,'podcast'),(2,'blog');
     CREATE TABLE ARTICLE(content_id TEXT PRIMARY KEY,source_id INTEGER,llm_tags TEXT,llm_hashtags TEXT,
-      llm_summary TEXT,transcript_vtt TEXT);
+      llm_summary TEXT,fulltext TEXT);
     INSERT INTO ARTICLE VALUES('a',1,'[\"山手縁乃庭\",\"ゲーム\",\"ゲーム\"]','[\"#旧分類\"]','山手縁乃庭では子どもたちとゲームを遊び、自由な遊びを支える運営の工夫について詳しく振り返っています。','not even valid VTT');
     INSERT INTO ARTICLE VALUES('b',1,'[\"他の団体\",\"ゲーム\"]',NULL,'ゲームの遊び方と攻略の工夫について詳しく紹介し、一緒に遊ぶ人たちとの交流の楽しさを語っています。','山手縁乃庭');
     INSERT INTO ARTICLE VALUES('c',1,NULL,'[\"#保持\"]',NULL,NULL);
@@ -67,7 +67,7 @@ $before = row($db,'a');
 check(classifyRun($db,$options,$catalog) === 0, 'batch classification');
 $after = row($db,'a');
 check($after['llm_hashtags'] === '["#山手縁乃庭"]', 'tags saved');
-check($after['llm_summary'] === $before['llm_summary'] && $after['transcript_vtt'] === $before['transcript_vtt']
+check($after['llm_summary'] === $before['llm_summary'] && $after['fulltext'] === $before['fulltext']
   && $after['llm_tags'] === $before['llm_tags'], 'existing analysis and transcript preserved');
 check(row($db,'b')['llm_hashtags'] === '[]', 'transcript is not used to add a candidate topic');
 check(row($db,'c')['llm_hashtags'] === '["#保持"]', 'missing tags preserve hashtags');

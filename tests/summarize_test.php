@@ -30,12 +30,12 @@ function testDatabase(bool $withOutput): PDO
 {
   $db = new PDO('sqlite::memory:', null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
   $db->exec('CREATE TABLE ARTICLE (content_id TEXT PRIMARY KEY, title TEXT,
-    transcript_vtt TEXT, summary TEXT, hashtags TEXT'
+    fulltext TEXT, summary TEXT, hashtags TEXT'
     . ($withOutput ? ', llm_summary TEXT, llm_tags TEXT, llm_hashtags TEXT' : '') . ')');
-  $insert = $db->prepare('INSERT INTO ARTICLE (content_id, title, transcript_vtt, summary, hashtags)
+  $insert = $db->prepare('INSERT INTO ARTICLE (content_id, title, fulltext, summary, hashtags)
     VALUES (?, ?, ?, ?, ?)');
   foreach (['a' => "WEBVTT\n\n00:00.000 --> 00:01.000\n地域活動の話です。\n",
-    'b' => "WEBVTT\n\n00:00.000 --> 00:01.000\n別の記事です。\n", 'empty' => ' ', 'null' => null] as $id => $vtt) {
+    'b' => '別の記事です。', 'empty' => ' ', 'null' => null] as $id => $vtt) {
     $insert->execute([$id, '記事' . $id, $vtt, '配信元の概要', '#配信元タグ']);
   }
   return $db;
@@ -80,6 +80,8 @@ try {
   check(summarizeTranscript($vtt) === "地域 & 技術 活動\nこんにちは", 'cue extraction strips timing, identifiers, metadata, markup');
   check(summarizeTranscript("WEBVTT\n\nNOTE empty\n") === '', 'empty cues');
   rejects(fn() => summarizeTranscript('not vtt'), 'invalid vtt');
+  check(summarizeFulltext($vtt) === "地域 & 技術 活動\nこんにちは", 'full text supports existing VTT');
+  check(summarizeFulltext("  ブログ本文\n\n次の段落  ") === "ブログ本文\n\n次の段落", 'full text supports plain text');
 
   $valid = ['summary' => "一行目。\n二行目。\n三行目。\n四行目。\n五行目。", 'tags' => ['地域', '技術'], 'hashtags' => ['#地域']];
   $allowed = ['#地域', '#山手', '#技術', '#その他'];
@@ -131,7 +133,7 @@ try {
 
   $payload = summarizePayload('', 'system', '{{ARTICLE_JSON}} / {{TAG_CATALOG_JSON}}', [], $catalog, '題名', '{{TAG_CATALOG_JSON}}');
   check(!array_key_exists('model', $payload), 'unspecified model omitted');
-  check(str_contains($payload['messages'][1]['content'], '"transcript":"{{TAG_CATALOG_JSON}}"'), 'template substitutions are not recursive');
+  check(str_contains($payload['messages'][1]['content'], '"fulltext":"{{TAG_CATALOG_JSON}}"'), 'template substitutions are not recursive');
   $payload = summarizePayload(' local-model ', 'system', 'user', [], [], 'title', 'text');
   check($payload['model'] === 'local-model', 'specified model forwarded');
   $withoutCandidates = summarizePayload('', 'system', summarizeRead(__DIR__ . '/../prompt/summarize-user.txt'), [], [], '題名', '本文');
