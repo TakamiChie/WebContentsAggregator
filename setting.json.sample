@@ -28,27 +28,27 @@
     ],
     "blogs": [
       {
-        "name": "ブログ名"
+        "name": "ブログ名",
         "id": 2,
         "url": "https://example.com/hatena/feed",
         "engine": "hatenablog"
       },
       {
-        "name": "ブログ名"
+        "name": "ブログ名",
         "id": 4,
         "url": "https://example.com/note/rss",
         "engine": "note"
       },
       {
-        "name": "ブログ名"
+        "name": "ブログ名",
         "id": 5,
         "url": "https://example.com/substack/feed",
         "engine": "substack"
       }
-      ],
+    ],
     "youtube": [
       {
-        "name": "チャンネル名・プレイリスト名"
+        "name": "チャンネル名・プレイリスト名",
         "id": 3,
         "pid": "PL_EXAMPLE_PLAYLIST_ID"
       }

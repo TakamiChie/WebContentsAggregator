@@ -2,76 +2,24 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/blog_feed.php';
+
 const DEFAULT_DATABASE_FILE = __DIR__ . '/../../../user/data/mediadata.sqlite3';
 
 $options = parseArguments($argv);
 $atomUrl = $options['feed_url'];
 
-libxml_use_internal_errors(true);
-
 $feedContent = @file_get_contents($atomUrl);
 if ($feedContent === false) {
-  fwrite(STDERR, "Failed to fetch Atom feed: {$atomUrl}\n");
-  exit(1);
+  fail("Failed to fetch blog feed: {$atomUrl}");
 }
 
-$xml = simplexml_load_string($feedContent);
-if ($xml === false) {
-  fwrite(STDERR, "Failed to parse Atom feed.\n");
-  foreach (libxml_get_errors() as $error) {
-    fwrite(STDERR, trim($error->message) . "\n");
-  }
-  libxml_clear_errors();
-  exit(1);
+try {
+  $xml = parseBlogFeed($feedContent);
+} catch (RuntimeException $error) {
+  fail($error->getMessage());
 }
-
 $rootName = $xml->getName();
-if ($rootName !== 'feed' && $rootName !== 'rss') {
-  fwrite(STDERR, "Expected an Atom or RSS 2.0 feed.\n");
-  exit(1);
-}
-
-/**
- * Atomのlink要素群から、条件に合うhrefを取得する
- *
- * @param SimpleXMLElement $parent
- * @param string|null $rel
- * @param string|null $typePrefix
- * @return string
- */
-function findAtomLinkHref(SimpleXMLElement $parent, ?string $rel = null, ?string $typePrefix = null): string
-{
-  if (!isset($parent->link)) {
-    return '';
-  }
-
-  foreach ($parent->link as $link) {
-    $attributes = $link->attributes();
-    if ($attributes === null) {
-      continue;
-    }
-
-    $href = isset($attributes['href']) ? (string)$attributes['href'] : '';
-    $linkRel = isset($attributes['rel']) ? (string)$attributes['rel'] : 'alternate';
-    $linkType = isset($attributes['type']) ? (string)$attributes['type'] : '';
-
-    if ($href === '') {
-      continue;
-    }
-
-    if ($rel !== null && $linkRel !== $rel) {
-      continue;
-    }
-
-    if ($typePrefix !== null && !str_starts_with($linkType, $typePrefix)) {
-      continue;
-    }
-
-    return $href;
-  }
-
-  return '';
-}
 
 $articles = [];
 $siteTitle = 'Unknown Site';
@@ -85,11 +33,7 @@ if ($rootName === 'feed') {
   $siteUrl = findAtomLinkHref($xml, 'alternate') ?: findAtomLinkHref($xml, null);
 
   foreach ($xml->entry as $entry) {
-    $publishedAt = formatDateToJst(
-      isset($entry->published)
-        ? (string)$entry->published
-        : (isset($entry->updated) ? (string)$entry->updated : '')
-    );
+    $identity = blogEntryIdentity($entry, $options['source_id'], true);
     $summary = isset($entry->summary) ? trim((string)$entry->summary) : '';
     if (containsHtml($summary)) {
       $summary = htmlToText($summary);
@@ -97,18 +41,8 @@ if ($rootName === 'feed') {
     $summary = html_entity_decode($summary, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     $hashtags = extractHashtags($summary);
 
-    $articles[] = [
-      'content_id' => getContentId(
-        trim((string)($entry->id ?? '')),
-        $options['source_id'],
-        findAtomLinkHref($entry, 'alternate') ?: findAtomLinkHref($entry, null),
-        trim((string)($entry->title ?? '')),
-        isset($entry->published) ? trim((string)$entry->published) : (isset($entry->updated) ? trim((string)$entry->updated) : '')
-      ),
-      'title' => isset($entry->title) ? trim((string)$entry->title) : 'Unknown Title',
-      'url' => findAtomLinkHref($entry, 'alternate') ?: findAtomLinkHref($entry, null),
-      'published_at' => $publishedAt,
-      'pub_date' => isset($entry->published) ? trim((string)$entry->published) : (isset($entry->updated) ? trim((string)$entry->updated) : ''),
+    $articles[] = $identity + [
+      'published_at' => formatDateToJst($identity['pub_date']),
       'cover_art' => findAtomLinkHref($entry, 'enclosure', 'image/') ?: findAtomLinkHref($entry, 'enclosure'),
       'summary' => $summary,
       'hashtags' => $hashtags,
@@ -125,7 +59,7 @@ if ($rootName === 'feed') {
   $namespaces = $xml->getNamespaces(true);
 
   foreach ($channel->item as $item) {
-    $publishedAt = formatDateToJst(isset($item->pubDate) ? (string)$item->pubDate : '');
+    $identity = blogEntryIdentity($item, $options['source_id'], false);
     $coverArt = '';
     if (isset($item->enclosure)) {
       foreach ($item->enclosure as $enclosure) {
@@ -163,18 +97,8 @@ if ($rootName === 'feed') {
     $summary = html_entity_decode($summary, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     $hashtags = extractHashtags($summary);
 
-    $articles[] = [
-      'content_id' => getContentId(
-        trim((string)($item->guid ?? '')),
-        $options['source_id'],
-        isset($item->link) ? trim((string)$item->link) : '',
-        isset($item->title) ? trim((string)$item->title) : '',
-        isset($item->pubDate) ? trim((string)$item->pubDate) : ''
-      ),
-      'title' => isset($item->title) ? trim((string)$item->title) : 'Unknown Title',
-      'url' => isset($item->link) ? trim((string)$item->link) : '',
-      'published_at' => $publishedAt,
-      'pub_date' => isset($item->pubDate) ? trim((string)$item->pubDate) : '',
+    $articles[] = $identity + [
+      'published_at' => formatDateToJst($identity['pub_date']),
       'cover_art' => $coverArt,
       'summary' => $summary,
       'hashtags' => $hashtags,
@@ -324,22 +248,6 @@ Options:
 TEXT
   );
   exit($exitCode);
-}
-
-function getContentId(
-  string $feedId,
-  string $sourceId,
-  string $url,
-  string $title,
-  string $publishedAt
-): string {
-  if ($feedId !== '') {
-    return $feedId;
-  }
-  if ($url !== '') {
-    return $url;
-  }
-  return $sourceId . ':' . hash('sha256', $title . "\n" . $publishedAt);
 }
 
 function writeArticlesToDatabase(string $databaseFile, array $articles): void

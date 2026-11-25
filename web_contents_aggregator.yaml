@@ -1,4 +1,4 @@
-description: Collect web contents, then download transcripts after successful collection.
+description: Collect web contents, then download transcripts and blog text before summarizing.
 type: graph
 # Every day at 00:10-03:10, 07:10-11:10, 14:10-18:10, and 22:10 JST
 # (UTC+09:00), 15 runs per day.
@@ -22,10 +22,16 @@ steps:
     depends:
       - generate_all
 
+  - id: get_blogtext
+    run: php src/get_blogtext.php
+    depends:
+      - generate_all
+
   - id: summarize
     run: php src/summarize.php
     depends:
       - get_transcript
+      - get_blogtext
 
   - id: classify_topics
     run: php src/classify_topics.php
