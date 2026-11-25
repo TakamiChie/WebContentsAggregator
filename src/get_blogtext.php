@@ -21,21 +21,23 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 
 function blogTextMain(array $argv): int
 {
-  $settingsPath = dirname(__DIR__) . '/settings.json';
-  foreach (array_slice($argv, 1) as $argument) {
-    if ($argument === '--help' || $argument === '-h') {
-      fwrite(STDOUT, "Usage: php src/get_blogtext.php [--settings=/path/to/settings.json]\n");
-      return 0;
-    }
-    if (!str_starts_with($argument, '--settings=') || substr($argument, 11) === '') {
-      throw new InvalidArgumentException("Invalid argument: {$argument}");
-    }
-    $settingsPath = substr($argument, 11);
+  $options = parseCollectionOptions($argv, dirname(__DIR__) . '/settings.json');
+  if ($options['help']) {
+    fwrite(STDOUT, "Usage: php src/get_blogtext.php [--settings=PATH] [--blog-id=ID [--blog-page=PAGE]]\n");
+    return 0;
   }
 
-  $settings = readEntries($settingsPath);
+  $settings = readEntries($options['settings']);
   $blogs = readEntryGroup($settings['CONTENTS'] ?? [], 'blogs');
-  $blogs = array_filter($blogs, static fn(array $blog): bool => ($blog['engine'] ?? null) === 'hatenablog');
+  if ($options['blog-id'] !== null) {
+    $blog = selectBlog($blogs, $options['blog-id']);
+    if (($blog['engine'] ?? null) !== 'hatenablog') {
+      throw new RuntimeException("Blog {$options['blog-id']} does not use the hatenablog engine");
+    }
+    $blogs = [$blog];
+  } else {
+    $blogs = array_filter($blogs, static fn(array $blog): bool => ($blog['engine'] ?? null) === 'hatenablog');
+  }
   if ($blogs === []) {
     fwrite(STDOUT, "No hatenablog feeds configured.\n");
     return 0;
@@ -62,7 +64,7 @@ function blogTextMain(array $argv): int
     $sourceId = '(unknown)';
     try {
       $sourceId = readSourceId($blog, 'blogs');
-      $url = readString($blog, 'url', 'blogs');
+      $url = blogFeedUrl($blog, $options['blog-page']);
       $body = @file_get_contents($url, false, $context);
       if ($body === false) {
         throw new RuntimeException('Failed to fetch the configured feed');

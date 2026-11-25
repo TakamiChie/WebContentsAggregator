@@ -8,16 +8,28 @@ const ENTRIES_FILE = __DIR__ . '/../settings.json';
 const YOUTUBE_FEED_UNAVAILABLE = 75;
 
 try {
-  main();
+  main($argv);
 } catch (RuntimeException $error) {
   fail($error->getMessage());
 }
 
-function main(): void
+function main(array $argv): void
 {
+  $options = parseCollectionOptions($argv);
+  if ($options['help']) {
+    fwrite(STDOUT, "Usage: php src/generate_all.php [--blog-id=ID [--blog-page=PAGE]]\n");
+    return;
+  }
+
   $entries = readEntries(ENTRIES_FILE);
   $databaseFile = resolveOutputPath(readString($entries, 'OUTPUT_PATH', 'configuration'));
   $databaseOption = '--database=' . $databaseFile;
+  if ($options['blog-id'] !== null) {
+    $blog = selectBlog(readEntryGroup($entries['CONTENTS'], 'blogs'), $options['blog-id']);
+    collectBlogMetadata($blog, $databaseOption, $options['blog-page']);
+    fwrite(STDOUT, "Processed blog {$options['blog-id']} in SQLite: {$databaseFile}\n");
+    return;
+  }
   $processed = 0;
   $skipped = 0;
   foreach (readEntryGroup($entries['CONTENTS'], 'podcasts') as $entry) {
@@ -31,11 +43,7 @@ function main(): void
   }
 
   foreach (readEntryGroup($entries['CONTENTS'], 'blogs') as $entry) {
-    runPhpScript(__DIR__ . '/tools/blog_load.php', [
-      readSourceId($entry, 'blogs'),
-      readString($entry, 'url', 'blogs'),
-      $databaseOption,
-    ]);
+    collectBlogMetadata($entry, $databaseOption);
     $processed++;
   }
 
@@ -61,6 +69,15 @@ function main(): void
       $databaseFile
     )
   );
+}
+
+function collectBlogMetadata(array $blog, string $databaseOption, ?string $page = null): void
+{
+  runPhpScript(__DIR__ . '/tools/blog_load.php', [
+    readSourceId($blog, 'blogs'),
+    blogFeedUrl($blog, $page),
+    $databaseOption,
+  ]);
 }
 
 function runPhpScript(

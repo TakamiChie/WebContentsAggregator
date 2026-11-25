@@ -19,6 +19,20 @@ $atom = $directory . '/atom.xml';
 $rss = $directory . '/rss.xml';
 
 try {
+  $blog = ['id' => 6, 'engine' => 'hatenablog', 'url' => 'https://example.test/feed?tag=a&tag=b&page=2#feed'];
+  checkBlogText(blogFeedUrl($blog, '4') === 'https://example.test/feed?tag=a&tag=b&page=4#feed',
+    'Expected page replacement to retain other query parameters and the fragment');
+  $selected = parseCollectionOptions(['script.php', '--blog-id', '6', '--blog-page=4']);
+  checkBlogText($selected['blog-id'] === '6' && $selected['blog-page'] === '4', 'Expected both blog options to be parsed');
+  foreach ([['--blog-page=4'], ['--blog-id=6', '--blog-page=0'], ['--blog-id=6', '--blog-page=1.5']] as $invalid) {
+    try {
+      parseCollectionOptions(['script.php', ...$invalid]);
+      throw new LogicException('Expected invalid blog options to be rejected');
+    } catch (RuntimeException $error) {
+      checkBlogText(str_contains($error->getMessage(), '--blog-page'), 'Expected an error about --blog-page');
+    }
+  }
+
   file_put_contents($atom, <<<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -63,6 +77,9 @@ XML);
     INSERT INTO ARTICLE VALUES ('atom', 6, NULL), ('https://example.com/xhtml', 6, ''),
       ('rss', 7, NULL), ('old', 6, '保存済み'), ('wrong-source', 8, NULL), ('summary-only', 6, NULL)");
   $args = ['get_blogtext.php', '--settings=' . $settings];
+  checkBlogText(blogTextMain([...$args, '--blog-id=6']) === 0, 'Expected collection of the selected blog');
+  checkBlogText($db->query("SELECT fulltext FROM ARTICLE WHERE content_id = 'rss'")->fetchColumn() === null,
+    'Expected the other blog to remain untouched when an id is specified');
   checkBlogText(blogTextMain($args) === 0, 'Expected successful collection of both feeds');
   $rows = $db->query('SELECT content_id, fulltext FROM ARTICLE')->fetchAll(PDO::FETCH_KEY_PAIR);
   checkBlogText($rows === [
