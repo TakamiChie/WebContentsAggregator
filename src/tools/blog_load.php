@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/blog_feed.php';
+require_once __DIR__ . '/blog_article.php';
 
 const DEFAULT_DATABASE_FILE = __DIR__ . '/../../../user/data/mediadata.sqlite3';
 
@@ -154,7 +155,11 @@ if ($options['mode'] === 'sql') {
 }
 
 if ($options['mode'] === 'write') {
-  writeArticlesToDatabase($options['database'], $articles);
+  try {
+    writeArticlesToDatabase($options['database'], $articles);
+  } catch (RuntimeException $error) {
+    fail($error->getMessage());
+  }
   fwrite(
     STDERR,
     count($articles) . " records written to SQLite: {$options['database']}\n"
@@ -250,61 +255,6 @@ TEXT
   exit($exitCode);
 }
 
-function writeArticlesToDatabase(string $databaseFile, array $articles): void
-{
-  if (!extension_loaded('pdo_sqlite')) {
-    fail('PDO SQLite extension is unavailable');
-  }
-  if (!is_dir(dirname($databaseFile))) {
-    fail('SQLite output directory does not exist: ' . dirname($databaseFile));
-  }
-
-  try {
-    $pdo = new PDO('sqlite:' . $databaseFile, null, null, [
-      PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-    ]);
-    $exists = $pdo->query(
-      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ARTICLE'"
-    )->fetchColumn();
-    if ($exists === false) {
-      throw new RuntimeException('Required table is missing: ARTICLE');
-    }
-
-    $pdo->beginTransaction();
-    $statement = $pdo->prepare(
-      'INSERT INTO "ARTICLE" '
-      . '("title", "url", "published_at", "cover_art", "summary", "hashtags", '
-      . '"source_id", "content_id") '
-      . 'VALUES (:title, :url, :published_at, :cover_art, :summary, :hashtags, '
-      . ':source_id, :content_id)'
-      . articleUpsertClause()
-    );
-    foreach ($articles as $article) {
-      $statement->execute(articleRow($article));
-    }
-    $pdo->commit();
-  } catch (Throwable $error) {
-    if (isset($pdo) && $pdo->inTransaction()) {
-      $pdo->rollBack();
-    }
-    fail('Failed to write to SQLite: ' . $error->getMessage());
-  }
-}
-
-function articleRow(array $article): array
-{
-  return [
-    ':title' => $article['title'],
-    ':url' => $article['url'],
-    ':published_at' => $article['published_at'],
-    ':cover_art' => $article['cover_art'],
-    ':summary' => $article['summary'],
-    ':hashtags' => implode(',', $article['hashtags']),
-    ':source_id' => $article['source_id'],
-    ':content_id' => $article['content_id'],
-  ];
-}
-
 function buildSqlScript(array $articles): string
 {
   $lines = ['BEGIN TRANSACTION;'];
@@ -320,20 +270,6 @@ function buildSqlScript(array $articles): string
   }
   $lines[] = 'COMMIT;';
   return implode(PHP_EOL, $lines) . PHP_EOL;
-}
-
-function articleUpsertClause(): string
-{
-  $columns = ['title', 'url', 'published_at', 'cover_art', 'summary', 'hashtags', 'source_id'];
-  $assignments = [];
-  $changes = [];
-  foreach ($columns as $column) {
-    $assignments[] = '"' . $column . '" = excluded."' . $column . '"';
-    $changes[] = '"ARTICLE"."' . $column . '" IS NOT excluded."' . $column . '"';
-  }
-  return ' ON CONFLICT ("content_id") DO UPDATE SET '
-    . implode(', ', $assignments)
-    . ' WHERE ' . implode(' OR ', $changes);
 }
 
 function sqlLiteral(mixed $value): string
@@ -396,18 +332,4 @@ function htmlToText(string $html): string
   $text = preg_replace("/\n{3,}/", "\n\n", $text);
 
   return trim($text);
-}
-
-function extractHashtags(string $text): array
-{
-  preg_match_all('/#(\w+)/u', $text, $matches);
-
-  $tags = [];
-  foreach ($matches[1] as $tag) {
-    if (!ctype_digit($tag)) {
-      $tags[] = '#' . $tag;
-    }
-  }
-
-  return array_values(array_unique($tags));
 }

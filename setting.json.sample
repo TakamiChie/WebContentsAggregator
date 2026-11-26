@@ -44,6 +44,14 @@
         "id": 5,
         "url": "https://example.com/substack/feed",
         "engine": "substack"
+      },
+      {
+        "name": "Substack Notes",
+        "id": 12,
+        "engine": "notion",
+        "url": "https://example.substack.com",
+        "database_id": "00000000-0000-0000-0000-000000000000",
+        "token_env": "NOTION_TOKEN"
       }
     ],
     "youtube": [
