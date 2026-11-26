@@ -125,6 +125,9 @@ function collectTranscripts(PDO $db, callable $download): int
         // Throttle failed requests as well as successful downloads.
         usleep(1000000);
       }
+      if ($vtt === null) {
+        continue;
+      }
       if (!is_string($vtt) || !hasWebVttHeader($vtt)) {
         throw new RuntimeException('Invalid WebVTT format');
       }
@@ -139,7 +142,7 @@ function collectTranscripts(PDO $db, callable $download): int
   return $failed === 0 ? 0 : 1;
 }
 
-function downloadTranscript(string $url): string
+function downloadTranscript(string $url): ?string
 {
   echo "Downloading transcript: {$url}\n";
   $curl = curl_init($url);
@@ -160,6 +163,9 @@ function downloadTranscript(string $url): string
       throw new RuntimeException('Download failed: ' . curl_error($curl));
     }
     $status = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+    if ($status === 404) {
+      return null;
+    }
     if ($status !== 200) {
       throw new RuntimeException("HTTP {$status}: {$url}");
     }
