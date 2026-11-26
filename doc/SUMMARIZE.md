@@ -60,7 +60,7 @@ hashtags: [地域コミュニティ支援, 山手縁乃庭]
 ## 実行例
 
 ```shell
-# 本文がある未生成の記事を生成・保存（記事選定用ハッシュタグなし）
+# 本文があり、要約が空欄の記事を公開日の新しい順に最大5件生成・保存
 php src/summarize.php
 
 # content_idを指定した1記事を生成・保存
@@ -85,11 +85,13 @@ php src/summarize.php --content "対象のcontent_id" --nodb --nohashtag
 php tests/summarize_test.php
 ```
 
+オプションを省略すると、`fulltext` に本文があり、`llm_summary` がNULL・空文字列・空白のみの記事を、公開日（`published_at`）の新しい順に最大5件処理します。
+
 `--nodb` ではDBを読み取り専用で開き、1記事につき1行のJSON（`content_id`, `summary`, `tags`, `hashtags`）を標準出力へ出します。要約中の改行はJSON内で `\n` となります。進捗・エラー・処理件数は標準エラーへ出します。
 
 `--cooldown=N` または `--cooldown N` で記事間の待ち時間（整数秒）を指定できます。既定値は20秒、`0` で待機なしです。最初の記事の前と最後の記事の後は待ちません。記事の生成や保存に失敗した場合も、次の記事へ進む前に待ちます。単一記事の処理では待機しません。`--nodb` にも適用されます。
 
-通常実行と `--nohashtag` は同じ動作です。候補ハッシュタグと候補ページのタイトル・本文をLLMに渡さず、記事データだけで要約と最大20件の内容分析タグ（`tags`）を生成します。候補リストは空配列となり、出力の `hashtags` は `[]` に限定しますが、DBの `llm_hashtags` は更新せず保持します（`classify_topics.php` の分類結果を保護するため）。`TAG_COLLECTION_DIR` の参照・MDファイルの読み取りを省略するため、このモードでは同設定が未指定でも構いません。記事本文に元からあるハッシュタグは削除しません。候補を使う実験的な一括生成には `--with-hashtags` を指定してください。このモードだけ `llm_hashtags` も更新します。通常のトピック分類は [CLASSIFY_TOPICS.md](CLASSIFY_TOPICS.md) を参照してください。
+通常実行と `--nohashtag` では、候補ハッシュタグと候補ページのタイトル・本文をLLMに渡さず、記事データだけで要約と最大20件の内容分析タグ（`tags`）を生成します。候補リストは空配列となり、出力の `hashtags` は `[]` に限定しますが、DBの `llm_hashtags` は更新せず保持します（`classify_topics.php` の分類結果を保護するため）。`TAG_COLLECTION_DIR` の参照・MDファイルの読み取りを省略するため、このモードでは同設定が未指定でも構いません。記事本文に元からあるハッシュタグは削除しません。候補を使う実験的な一括生成には `--with-hashtags` を指定してください。このモードだけ `llm_hashtags` も更新します。通常のトピック分類は [CLASSIFY_TOPICS.md](CLASSIFY_TOPICS.md) を参照してください。
 
 候補が空の場合、出力スキーマには `const: []` を使います。一部のLM Studioランタイムでは `maxItems: 0` が不正な生成文法に変換され、構造化出力が効かなくなるためです。応答がJSONでなかった場合は、HTTP応答全体の解析失敗かLLM生成本文の解析失敗かをエラーメッセージで区別します。
 

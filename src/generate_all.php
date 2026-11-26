@@ -3,13 +3,14 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/collection_settings.php';
+require_once __DIR__ . '/tools/blog_notion.php';
 
 const ENTRIES_FILE = __DIR__ . '/../settings.json';
 const YOUTUBE_FEED_UNAVAILABLE = 75;
 
 try {
   main($argv);
-} catch (RuntimeException $error) {
+} catch (RuntimeException | JsonException $error) {
   fail($error->getMessage());
 }
 
@@ -26,7 +27,7 @@ function main(array $argv): void
   $databaseOption = '--database=' . $databaseFile;
   if ($options['blog-id'] !== null) {
     $blog = selectBlog(readEntryGroup($entries['CONTENTS'], 'blogs'), $options['blog-id']);
-    collectBlogMetadata($blog, $databaseOption, $options['blog-page']);
+    collectBlogMetadata($blog, $databaseFile, $options['blog-page']);
     fwrite(STDOUT, "Processed blog {$options['blog-id']} in SQLite: {$databaseFile}\n");
     return;
   }
@@ -43,7 +44,7 @@ function main(array $argv): void
   }
 
   foreach (readEntryGroup($entries['CONTENTS'], 'blogs') as $entry) {
-    collectBlogMetadata($entry, $databaseOption);
+    collectBlogMetadata($entry, $databaseFile);
     $processed++;
   }
 
@@ -71,12 +72,20 @@ function main(array $argv): void
   );
 }
 
-function collectBlogMetadata(array $blog, string $databaseOption, ?string $page = null): void
+function collectBlogMetadata(array $blog, string $databaseFile, ?string $page = null): void
 {
+  if (($blog['engine'] ?? null) === 'notion') {
+    if ($page !== null) {
+      throw new RuntimeException('--blog-page is supported only for hatenablog feeds');
+    }
+    collectNotionBlog($blog, $databaseFile);
+    return;
+  }
+
   runPhpScript(__DIR__ . '/tools/blog_load.php', [
     readSourceId($blog, 'blogs'),
     blogFeedUrl($blog, $page),
-    $databaseOption,
+    '--database=' . $databaseFile,
   ]);
 }
 

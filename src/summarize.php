@@ -25,6 +25,7 @@ function summarizeMain(array $argv): int
   $options = summarizeOptions($argv);
   if ($options['help']) {
     fwrite(STDOUT, "Usage: php src/summarize.php [--content=<content_id>] [--nodb] [--with-hashtags] [--cooldown=seconds]\n"
+      . "  With no options, process up to five newest articles with text and no LLM summary.\n"
       . "  --content <content_id>  Process one article (also accepts --content=<id>)\n"
       . "  --nodb                 Print JSON Lines without writing to SQLite\n"
       . "  --cooldown <seconds>   Wait between articles (default: 20; also --cooldown=N)\n"
@@ -65,7 +66,7 @@ function summarizeMain(array $argv): int
   if ($options['nodb']) {
     $db->exec('PRAGMA query_only = ON');
   }
-  summarizeCheckSchema($db, $options['nodb']);
+  summarizeCheckSchema($db, $options['nodb'], $options['latestUnsummarized']);
   // Do not even resolve/read TAG_COLLECTION_DIR when candidates are disabled.
   $catalog = $options['nohashtag'] ? [] : summarizeTagCatalog(
     summarizePath($settings['TAG_COLLECTION_DIR'] ?? null, 'TAG_COLLECTION_DIR')
@@ -90,6 +91,7 @@ function summarizeMain(array $argv): int
 function summarizeOptions(array $argv): array
 {
   $options = ['content' => null, 'nodb' => false, 'cooldown' => 20, 'nohashtag' => true, 'help' => false];
+  $options['latestUnsummarized'] = count($argv) === 1;
   for ($i = 1; $i < count($argv); $i++) {
     $arg = $argv[$i];
     if ($arg === '--help' || $arg === '-h') {
@@ -202,10 +204,13 @@ function summarizeTagCatalog(string $directory): array
   return array_values($catalog);
 }
 
-function summarizeCheckSchema(PDO $db, bool $nodb): void
+function summarizeCheckSchema(PDO $db, bool $nodb, bool $latestUnsummarized = false): void
 {
   $columns = $db->query('PRAGMA table_info(ARTICLE)')->fetchAll(PDO::FETCH_COLUMN, 1);
   $required = ['content_id', 'title', 'fulltext'];
+  if ($latestUnsummarized) {
+    $required[] = 'published_at';
+  }
   if (!$nodb) {
     $required = array_merge($required, ['llm_summary', 'llm_tags', 'llm_hashtags']);
   }
@@ -384,15 +389,21 @@ function summarizeValidate(string $json, array $allowed): array
 
 function summarizeArticles(PDO $db, array $options, array $allowed, callable $generate, ?callable $wait = null): int
 {
-  summarizeCheckSchema($db, $options['nodb']);
+  $latestUnsummarized = $options['latestUnsummarized'] ?? false;
+  summarizeCheckSchema($db, $options['nodb'], $latestUnsummarized);
   // Fetch only IDs up front: do not keep all article texts or an active read cursor during inference.
-  $query = "SELECT content_id FROM ARTICLE WHERE fulltext IS NOT NULL AND trim(fulltext) <> ''";
+  $whitespace = $latestUnsummarized ? ', char(9, 10, 11, 13, 32)' : '';
+  $query = "SELECT content_id FROM ARTICLE WHERE fulltext IS NOT NULL AND trim(fulltext{$whitespace}) <> ''";
+  $needsSummary = "COALESCE(trim(llm_summary{$whitespace}), '') = ''";
   $params = [];
   if ($options['content'] !== null) {
     $query .= ' AND content_id = :id';
     $params[':id'] = $options['content'];
   }
-  $select = $db->prepare($query . ' ORDER BY content_id');
+  $query .= $latestUnsummarized
+    ? " AND {$needsSummary} ORDER BY julianday(published_at) DESC, content_id LIMIT 5"
+    : ' ORDER BY content_id';
+  $select = $db->prepare($query);
   $select->execute($params);
   $ids = $select->fetchAll(PDO::FETCH_COLUMN);
   $select->closeCursor();
@@ -404,7 +415,8 @@ function summarizeArticles(PDO $db, array $options, array $allowed, callable $ge
   $writeHashtags = !($options['nohashtag'] ?? true);
   $update = $options['nodb'] ? null : $db->prepare('UPDATE ARTICLE SET llm_summary = :summary,
     llm_tags = :tags' . ($writeHashtags ? ', llm_hashtags = :hashtags' : '') . '
-    WHERE content_id = :id AND fulltext = :fulltext AND title = :title');
+    WHERE content_id = :id AND fulltext = :fulltext AND title = :title'
+    . ($latestUnsummarized ? " AND {$needsSummary}" : ''));
   $processed = 0;
   $failed = 0;
   $cooldown = $options['cooldown'] ?? 20;
@@ -416,6 +428,10 @@ function summarizeArticles(PDO $db, array $options, array $allowed, callable $ge
       $read->closeCursor();
       if ($row === false) {
         throw new RuntimeException('Article was removed during processing');
+      }
+      if ($latestUnsummarized && (trim($row['llm_summary'] ?? '') !== '' || trim($row['fulltext'] ?? '') === '')) {
+        fwrite(STDERR, "Skipping [{$id}]: no longer eligible for summarization\n");
+        continue;
       }
       if (!$options['nodb'] && trim($row['llm_summary'] ?? '') !== '' && trim($row['llm_tags'] ?? '') !== '') {
         fwrite(STDERR, "Skipping [{$id}]: llm_summary and llm_tags already populated\n");

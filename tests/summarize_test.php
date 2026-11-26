@@ -46,14 +46,17 @@ mkdir($temporary);
 mkdir($temporary . '/nested');
 try {
   $options = summarizeOptions(['summarize.php', '--content', 'a', '--nodb']);
-  check($options === ['content' => 'a', 'nodb' => true, 'cooldown' => 20, 'nohashtag' => true, 'help' => false], 'space options');
+  check($options === ['content' => 'a', 'nodb' => true, 'cooldown' => 20, 'nohashtag' => true, 'help' => false,
+    'latestUnsummarized' => false], 'space options');
   check(summarizeOptions(['x', '--nohashtag', '--content=a', '--nodb'])
-    === ['content' => 'a', 'nodb' => true, 'cooldown' => 20, 'nohashtag' => true, 'help' => false], 'nohashtag combines with content and nodb');
+    === ['content' => 'a', 'nodb' => true, 'cooldown' => 20, 'nohashtag' => true, 'help' => false,
+      'latestUnsummarized' => false], 'nohashtag combines with content and nodb');
   check(summarizeOptions(['x', '--content=a'])['content'] === 'a', 'equals option');
   check(summarizeOptions(['x', '--with-hashtags'])['nohashtag'] === false, 'candidate mode is opt-in');
   check(summarizeOptions(['x'])['nohashtag'] === true, 'no-candidate mode is default');
   check(summarizeOptions(['x'])['cooldown'] === 20, 'cooldown defaults to twenty seconds');
-  check(summarizeOptions(['x', '--cooldown=0'])['cooldown'] === 0, 'zero cooldown disables waiting');
+  $noCooldown = summarizeOptions(['x', '--cooldown=0']);
+  check($noCooldown['cooldown'] === 0 && !$noCooldown['latestUnsummarized'], 'explicit cooldown retains batch mode');
   check(summarizeOptions(['x', '--cooldown', '7'])['cooldown'] === 7, 'space cooldown syntax');
   foreach ([['--content'], ['--content='], ['--content', '--nodb'], ['--content=a', '--content=b'], ['--cooldown'], ['--cooldown='], ['--cooldown=-1'], ['--cooldown=1.5'], ['--cooldown=abc'], ['--cooldown=999999999999999999999999'], ['--unknown']] as $args) {
     rejects(fn() => summarizeOptions(array_merge(['x'], $args)), 'invalid CLI must fail');
@@ -223,6 +226,28 @@ try {
   }) === 1, 'concurrent article change detected');
   check($db->query("SELECT llm_summary FROM ARTICLE WHERE content_id = 'a'")->fetchColumn() === $previous, 'stale summary not saved');
 
+  $latestDb = testDatabase(true);
+  $latestDb->exec('ALTER TABLE ARTICLE ADD COLUMN published_at TEXT');
+  $latestDb->exec('DELETE FROM ARTICLE');
+  $insert = $latestDb->prepare('INSERT INTO ARTICLE (content_id, title, published_at, fulltext, llm_summary) VALUES (?, ?, ?, ?, ?)');
+  foreach ([
+    ['a', '2026-11-24', '本文', null],
+    ['b', '2026-11-22', '本文', ''],
+    ['c', '2026-11-26T01:00:00+09:00', '本文', " \t\n"],
+    ['d', '2026-11-21', '本文', null],
+    ['e', '2026-11-26T02:00:00+11:00', '本文', null],
+    ['f', '2026-11-23', '本文', null],
+    ['summarized', '2026-11-27', '本文', '既存の要約'],
+    ['missing', '2026-11-28', null, null],
+    ['blank', '2026-11-29', " \t\n", null],
+  ] as [$id, $date, $fulltext, $summary]) {
+    $insert->execute([$id, $id, $date, $fulltext, $summary]);
+  }
+  $calls = [];
+  $noWait = static function (int $seconds): void {};
+  check(summarizeArticles($latestDb, summarizeOptions(['summarize.php']), $allowed, $generate, $noWait) === 0,
+    'no-option run succeeds');
+  check($calls === ['c', 'e', 'a', 'f', 'b'], 'no-option run selects the five newest articles with text and no summary');
   fwrite(STDOUT, "Passed {$checks} checks.\n");
 } finally {
   foreach (['one.md', 'nested/two.MD', 'plain.md', 'invalid.md'] as $file) {
