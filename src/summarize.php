@@ -5,6 +5,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/webvtt.php';
 require_once __DIR__ . '/discord_progress.php';
 
+const SUMMARIZE_PENDING_WHITESPACE = 'char(9, 10, 11, 13, 32)';
+const SUMMARIZE_PENDING_SUMMARY = "COALESCE(trim(llm_summary, " . SUMMARIZE_PENDING_WHITESPACE . "), '') = ''";
+
 // Required ARTICLE columns (apply manually; see doc/SUMMARIZE.md):
 // llm_summary TEXT DEFAULT NULL, llm_tags TEXT DEFAULT NULL, llm_hashtags TEXT DEFAULT NULL.
 if (PHP_SAPI !== 'cli') {
@@ -58,17 +61,7 @@ function summarizeMain(array $argv): int
     || !in_array(parse_url($endpoint, PHP_URL_SCHEME), ['http', 'https'], true)) {
     throw new RuntimeException('LLM_API_URL must be an HTTP(S) chat/completions URL');
   }
-  if (!is_file($database)) {
-    throw new RuntimeException("SQLite database file does not exist: {$database}");
-  }
-  $db = new PDO('sqlite:' . $database, null, null, [
-    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-    PDO::ATTR_TIMEOUT => 5,
-    PDO::SQLITE_ATTR_OPEN_FLAGS => $options['nodb'] ? PDO::SQLITE_OPEN_READONLY : PDO::SQLITE_OPEN_READWRITE,
-  ]);
-  if ($options['nodb']) {
-    $db->exec('PRAGMA query_only = ON');
-  }
+  $db = summarizeOpenDatabase($database, $options['nodb']);
   summarizeCheckSchema($db, $options['nodb'], $options['latestUnsummarized']);
   // Do not even resolve/read TAG_COLLECTION_DIR when candidates are disabled.
   $catalog = $options['nohashtag'] ? [] : summarizeTagCatalog(
@@ -207,6 +200,22 @@ function summarizeTagCatalog(string $directory): array
   return array_values($catalog);
 }
 
+function summarizeOpenDatabase(string $database, bool $readOnly): PDO
+{
+  if (!is_file($database)) {
+    throw new RuntimeException("SQLite database file does not exist: {$database}");
+  }
+  $db = new PDO('sqlite:' . $database, null, null, [
+    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_TIMEOUT => 5,
+    PDO::SQLITE_ATTR_OPEN_FLAGS => $readOnly ? PDO::SQLITE_OPEN_READONLY : PDO::SQLITE_OPEN_READWRITE,
+  ]);
+  if ($readOnly) {
+    $db->exec('PRAGMA query_only = ON');
+  }
+  return $db;
+}
+
 function summarizeCheckSchema(PDO $db, bool $nodb, bool $latestUnsummarized = false): void
 {
   $columns = $db->query('PRAGMA table_info(ARTICLE)')->fetchAll(PDO::FETCH_COLUMN, 1);
@@ -214,14 +223,30 @@ function summarizeCheckSchema(PDO $db, bool $nodb, bool $latestUnsummarized = fa
   if ($latestUnsummarized) {
     $required[] = 'published_at';
   }
+  if (!$nodb || $latestUnsummarized) {
+    $required[] = 'llm_summary';
+  }
   if (!$nodb) {
-    $required = array_merge($required, ['llm_summary', 'llm_tags', 'llm_hashtags']);
+    $required = array_merge($required, ['llm_tags', 'llm_hashtags']);
   }
   $missing = array_diff($required, $columns);
   if ($missing !== []) {
     throw new RuntimeException('Missing ARTICLE columns: ' . implode(', ', $missing)
-      . '. Apply the schema in doc/SUMMARIZE.md manually, or use --nodb to preview without output columns.');
+      . '. Apply the schema in doc/SUMMARIZE.md manually.'
+      . ($nodb && $latestUnsummarized ? '' : ' Use --nodb to preview without output columns.'));
   }
+}
+
+function summarizePendingArticles(PDO $db, int $limit, bool $includePreview = false): PDOStatement
+{
+  $columns = $includePreview ? 'content_id, published_at, title, fulltext' : 'content_id';
+  $query = $db->prepare("SELECT {$columns} FROM ARTICLE
+    WHERE fulltext IS NOT NULL AND trim(fulltext, " . SUMMARIZE_PENDING_WHITESPACE . ") <> ''
+      AND " . SUMMARIZE_PENDING_SUMMARY . "
+    ORDER BY julianday(published_at) DESC, content_id LIMIT :limit");
+  $query->bindValue(':limit', $limit, PDO::PARAM_INT);
+  $query->execute();
+  return $query;
 }
 
 function summarizeFulltext(string $text): string
@@ -395,19 +420,18 @@ function summarizeArticles(PDO $db, array $options, array $allowed, callable $ge
   $latestUnsummarized = $options['latestUnsummarized'] ?? false;
   summarizeCheckSchema($db, $options['nodb'], $latestUnsummarized);
   // Fetch only IDs up front: do not keep all article texts or an active read cursor during inference.
-  $whitespace = $latestUnsummarized ? ', char(9, 10, 11, 13, 32)' : '';
-  $query = "SELECT content_id FROM ARTICLE WHERE fulltext IS NOT NULL AND trim(fulltext{$whitespace}) <> ''";
-  $needsSummary = "COALESCE(trim(llm_summary{$whitespace}), '') = ''";
-  $params = [];
-  if ($options['content'] !== null) {
-    $query .= ' AND content_id = :id';
-    $params[':id'] = $options['content'];
+  if ($latestUnsummarized) {
+    $select = summarizePendingArticles($db, 5);
+  } else {
+    $query = "SELECT content_id FROM ARTICLE WHERE fulltext IS NOT NULL AND trim(fulltext) <> ''";
+    $params = [];
+    if ($options['content'] !== null) {
+      $query .= ' AND content_id = :id';
+      $params[':id'] = $options['content'];
+    }
+    $select = $db->prepare($query . ' ORDER BY content_id');
+    $select->execute($params);
   }
-  $query .= $latestUnsummarized
-    ? " AND {$needsSummary} ORDER BY julianday(published_at) DESC, content_id LIMIT 5"
-    : ' ORDER BY content_id';
-  $select = $db->prepare($query);
-  $select->execute($params);
   $ids = $select->fetchAll(PDO::FETCH_COLUMN);
   $select->closeCursor();
   if ($ids === [] && $options['content'] !== null) {
@@ -419,7 +443,7 @@ function summarizeArticles(PDO $db, array $options, array $allowed, callable $ge
   $update = $options['nodb'] ? null : $db->prepare('UPDATE ARTICLE SET llm_summary = :summary,
     llm_tags = :tags' . ($writeHashtags ? ', llm_hashtags = :hashtags' : '') . '
     WHERE content_id = :id AND fulltext = :fulltext AND title = :title'
-    . ($latestUnsummarized ? " AND {$needsSummary}" : ''));
+    . ($latestUnsummarized ? ' AND ' . SUMMARIZE_PENDING_SUMMARY : ''));
   $processed = 0;
   $failed = 0;
   $skipped = 0;
