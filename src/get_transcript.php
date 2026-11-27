@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/webvtt.php';
+require_once __DIR__ . '/discord_progress.php';
 
 // Schema: ARTICLE.fulltext TEXT DEFAULT NULL.
 // Stores complete WebVTT documents for episodes with no full text.
@@ -15,6 +16,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
   try {
     exit(transcriptMain($argv));
   } catch (Throwable $error) {
+    DiscordProgress::send('❌', '文字起こしの収集が失敗');
     fwrite(STDERR, $error->getMessage() . "\n");
     exit(1);
   }
@@ -33,6 +35,7 @@ function transcriptMain(array $argv): int
     }
     $database = substr($arg, 11);
   }
+  DiscordProgress::start(__FILE__, '文字起こしの収集を開始');
   $database ??= transcriptDatabasePath(dirname(__DIR__));
   if (!is_file($database)) {
     throw new RuntimeException("SQLite database file does not exist: {$database}");
@@ -54,16 +57,24 @@ function transcriptMain(array $argv): int
 function transcriptDatabasePath(string $directory): string
 {
   $file = $directory . '/setting.json';
-  if (!is_file($file)) {
-    // The existing aggregator uses the plural filename.
-    $file = $directory . '/settings.json';
+  $path = null;
+  foreach ([$file, $directory . '/settings.json'] as $candidate) {
+    if ($candidate === $file && !is_file($candidate)) {
+      continue;
+    }
+    $json = @file_get_contents($candidate);
+    if ($json === false) {
+      throw new RuntimeException("Cannot read configuration file: {$candidate}");
+    }
+    $settings = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+    if (is_array($settings) && array_key_exists('OUTPUT_PATH', $settings)) {
+      $path = $settings['OUTPUT_PATH'];
+      break;
+    }
+    if (!is_array($settings) || !is_file($directory . '/settings.json')) {
+      break;
+    }
   }
-  $json = @file_get_contents($file);
-  if ($json === false) {
-    throw new RuntimeException("Cannot read configuration file: {$file}");
-  }
-  $settings = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
-  $path = is_array($settings) ? ($settings['OUTPUT_PATH'] ?? null) : null;
   if (!is_string($path) || trim($path) === '') {
     throw new RuntimeException('Set OUTPUT_PATH to the database path in the configuration file');
   }
@@ -113,6 +124,7 @@ function collectTranscripts(PDO $db, callable $download): int
       AND (fulltext IS NULL OR fulltext = '')");
   $saved = 0;
   $failed = 0;
+  $unavailable = 0;
   foreach ($rows as $row) {
     $url = transcriptUrl($row['url']);
     if ($url === null) {
@@ -126,18 +138,26 @@ function collectTranscripts(PDO $db, callable $download): int
         usleep(1000000);
       }
       if ($vtt === null) {
+        $unavailable++;
         continue;
       }
       if (!is_string($vtt) || !hasWebVttHeader($vtt)) {
         throw new RuntimeException('Invalid WebVTT format');
       }
       $update->execute([':vtt' => $vtt, ':id' => $row['content_id'], ':url' => $row['url']]);
-      $saved += $update->rowCount();
+      $count = $update->rowCount();
+      $saved += $count;
+      if ($count > 0) {
+        DiscordProgress::send('💾', '文字起こしのDB保存完了', DiscordProgress::label((string)$row['content_id']));
+      }
     } catch (Throwable $error) {
       $failed++;
+      DiscordProgress::send('❌', '文字起こしの取得・保存が失敗', DiscordProgress::label((string)$row['content_id']));
       fwrite(STDERR, "Download/save failed [{$row['content_id']}]: {$error->getMessage()}\n");
     }
   }
+  DiscordProgress::send($failed === 0 ? '✅' : '⚠️', '文字起こしの収集結果',
+    "保存 {$saved} 件・未公開 {$unavailable} 件・失敗 {$failed} 件");
   fwrite(STDOUT, "Saved: {$saved} / Failed: {$failed}\n");
   return $failed === 0 ? 0 : 1;
 }

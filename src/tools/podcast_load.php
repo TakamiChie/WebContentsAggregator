@@ -2,20 +2,28 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../discord_progress.php';
+
 const DEFAULT_DATABASE_FILE = __DIR__ . '/../../../user/data/mediadata.sqlite3';
 const DEFAULT_LIMIT = '60';
 
-main($argv);
+try {
+  main($argv);
+} catch (Throwable $error) {
+  fail($error->getMessage());
+}
 
 function main(array $argv): void
 {
   $options = parseArguments($argv);
   $limitDate = parseLimitDate($options['limit']);
+  DiscordProgress::start(__FILE__, 'ポッドキャストの取得を開始');
   $feedXml = loadFeedXml($options['rss_url']);
   $podcast = readPodcast($feedXml, $options['source_id'], $options['rss_url'], $limitDate);
 
   if ($options['mode'] === 'dry-run') {
     outputJson($podcast);
+    DiscordProgress::send('🔎', 'エピソードの取得プレビュー完了', count($podcast['episodes']) . ' 件');
     return;
   }
 
@@ -28,10 +36,12 @@ function main(array $argv): void
     } else {
       fwrite(STDERR, "SQL file generated: {$options['sql_output']}\n");
     }
+    DiscordProgress::send('📄', 'エピソードのSQL生成完了', count($podcast['episodes']) . ' 件');
     return;
   }
 
-  writePodcastToDatabase($options['database'], $podcast);
+  $changed = writePodcastToDatabase($options['database'], $podcast);
+  DiscordProgress::articles($podcast['site_title'] . '｜' . $options['source_id'], count($podcast['episodes']), $changed);
   outputJson($podcast);
   fwrite(
     STDERR,
@@ -228,7 +238,7 @@ function getContentId(SimpleXMLElement $item, string $sourceId, string $url): st
   );
 }
 
-function writePodcastToDatabase(string $databaseFile, array $podcast): void
+function writePodcastToDatabase(string $databaseFile, array $podcast): array
 {
   if (!extension_loaded('pdo_sqlite')) {
     fail('PDO SQLite is unavailable. Enable pdo_sqlite in php.ini');
@@ -252,11 +262,16 @@ function writePodcastToDatabase(string $databaseFile, array $podcast): void
       . 'VALUES (:title, :url, :published_at, :cover_art, :summary, :hashtags, :source_id, :content_id)'
       . articleUpsertClause()
     );
+    $changedTitles = [];
     foreach ($podcast['episodes'] as $episode) {
       $insertEpisode->execute(articleRow($episode));
+      if ($insertEpisode->rowCount() > 0) {
+        $changedTitles[] = $episode['title'];
+      }
     }
 
     $pdo->commit();
+    return $changedTitles;
   } catch (Throwable $error) {
     if (isset($pdo) && $pdo->inTransaction()) {
       $pdo->rollBack();
@@ -445,6 +460,7 @@ function extractHashtags(string $text): array
 
 function fail(string $message): never
 {
+  DiscordProgress::send('❌', 'ポッドキャストの取得・保存が失敗');
   fwrite(STDERR, $message . PHP_EOL);
   exit(1);
 }

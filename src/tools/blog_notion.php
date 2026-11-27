@@ -9,6 +9,7 @@ require_once __DIR__ . '/notion_api.php';
 function collectNotionBlog(array $blog, string $databaseFile): void
 {
   $sourceId = readSourceId($blog, 'blogs');
+  DiscordProgress::send('📥', 'Notion の記事を取得中', DiscordProgress::label($sourceId));
   $databaseId = readString($blog, 'database_id', "Notion blog {$sourceId}");
   $url = readString($blog, 'url', "Notion blog {$sourceId}");
   $tokenEnv = readString($blog + ['token_env' => 'NOTION_TOKEN'], 'token_env', "Notion blog {$sourceId}");
@@ -22,9 +23,8 @@ function collectNotionBlog(array $blog, string $databaseFile): void
     notionApiRequest($method, $path, $body, $token, $configuration);
 
   $articles = notionBlogArticles($sourceId, $databaseId, $url, $request, new DateTimeImmutable());
-  if ($articles !== []) {
-    writeArticlesToDatabase($databaseFile, $articles, includeFulltext: true);
-  }
+  $changed = $articles === [] ? [] : writeArticlesToDatabase($databaseFile, $articles, includeFulltext: true);
+  DiscordProgress::articles('Notion ' . $sourceId, count($articles), $changed);
   fwrite(STDERR, sprintf("Notion blog %s: %d articles processed\n", $sourceId, count($articles)));
 }
 

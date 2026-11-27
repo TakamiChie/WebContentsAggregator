@@ -2,15 +2,22 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../discord_progress.php';
+
 const DEFAULT_DATABASE_FILE = __DIR__ . '/../../../user/data/mediadata.sqlite3';
 const FEED_UNAVAILABLE_EXIT_CODE = 75;
 
-main($argv);
+try {
+  main($argv);
+} catch (Throwable $error) {
+  fail($error->getMessage());
+}
 
 function main(array $argv): void
 {
   $options = parseArguments($argv);
   $playlistId = $options['playlist_id'];
+  DiscordProgress::start(__FILE__, 'YouTube の動画情報取得を開始');
 
   // 再生リストIDからYouTubeのRSS(Atom)フィードURLを構築
   $atomUrl = 'https://www.youtube.com/feeds/videos.xml?playlist_id='
@@ -27,12 +34,11 @@ function main(array $argv): void
 
   $xml = simplexml_load_string($feedContent);
   if ($xml === false) {
-    fwrite(STDERR, "YouTube feed is temporarily unavailable: Failed to parse feed.\n");
     foreach (libxml_get_errors() as $error) {
       fwrite(STDERR, trim($error->message) . "\n");
     }
     libxml_clear_errors();
-    exit(FEED_UNAVAILABLE_EXIT_CODE);
+    skipUnavailableFeed('Failed to parse feed.');
   }
 
   $channelTitle = isset($xml->title) ? trim((string)$xml->title) : 'Unknown Channel';
@@ -115,11 +121,13 @@ function main(array $argv): void
       fwrite(STDOUT, $json . PHP_EOL);
       fwrite(STDERR, "SQL file generated: {$options['sql_output']}\n");
     }
+    DiscordProgress::send('📄', '動画データのSQL生成完了', count($videos) . ' 件');
     return;
   }
 
   if ($options['mode'] === 'write') {
-    writeVideosToDatabase($options['database'], $videos);
+    $changed = writeVideosToDatabase($options['database'], $videos);
+    DiscordProgress::articles($channelTitle . '｜' . $options['source_id'], count($videos), $changed);
     fwrite(
       STDERR,
       count($videos) . " records written to SQLite: {$options['database']}\n"
@@ -133,6 +141,9 @@ function main(array $argv): void
       fail("Failed to write JSON file: {$options['json_output']}");
     }
     fwrite(STDERR, "JSON file generated: {$options['json_output']}\n");
+  }
+  if ($options['mode'] === 'dry-run') {
+    DiscordProgress::send('🔎', '動画情報の取得プレビュー完了', count($videos) . ' 件');
   }
 }
 
@@ -258,7 +269,7 @@ function getFallbackContentId(
     : $sourceId . ':' . hash('sha256', $title . "\n" . $publishedAt);
 }
 
-function writeVideosToDatabase(string $databaseFile, array $videos): void
+function writeVideosToDatabase(string $databaseFile, array $videos): array
 {
   if (!extension_loaded('pdo_sqlite')) {
     fail('PDO SQLite extension is unavailable');
@@ -285,10 +296,15 @@ function writeVideosToDatabase(string $databaseFile, array $videos): void
       . ':source_id, :content_id)'
       . articleUpsertClause()
     );
+    $changedTitles = [];
     foreach ($videos as $video) {
       $statement->execute(articleRow($video));
+      if ($statement->rowCount() > 0) {
+        $changedTitles[] = $video['title'];
+      }
     }
     $pdo->commit();
+    return $changedTitles;
   } catch (Throwable $error) {
     if (isset($pdo) && $pdo->inTransaction()) {
       $pdo->rollBack();
@@ -350,12 +366,14 @@ function sqlLiteral(mixed $value): string
 
 function fail(string $message): never
 {
+  DiscordProgress::send('❌', 'YouTube の動画情報取得・保存が失敗');
   fwrite(STDERR, $message . PHP_EOL);
   exit(1);
 }
 
 function skipUnavailableFeed(string $message): never
 {
+  DiscordProgress::send('⚠️', 'YouTube フィードを取得できなかったためスキップ');
   fwrite(STDERR, "YouTube feed is temporarily unavailable: {$message}\n");
   exit(FEED_UNAVAILABLE_EXIT_CODE);
 }

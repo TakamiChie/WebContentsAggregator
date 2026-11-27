@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/discord_progress.php';
+
 function resolveOutputPath(string $path): string
 {
   if (!str_starts_with($path, '~')) {
@@ -97,17 +99,17 @@ function readString(array $entry, string $key, string $group): string
   return $value;
 }
 
-function parseCollectionOptions(array $argv, ?string $settings = null, bool $allowPageRange = false): array
+function parseCollectionOptions(array $argv, bool $allowSettings = false, bool $allowPageRange = false): array
 {
   $options = ['blog-id' => null, 'blog-page' => null];
-  if ($settings !== null) {
+  if ($allowSettings) {
     $options['settings'] = null;
   }
 
   for ($index = 1; $index < count($argv); $index++) {
     $argument = $argv[$index];
     if ($argument === '--help' || $argument === '-h') {
-      return ['help' => true, 'settings' => $settings] + $options;
+      return ['help' => true] + $options;
     }
     [$flag, $value] = array_pad(explode('=', $argument, 2), 2, null);
     $key = substr($flag, 2);
@@ -136,7 +138,6 @@ function parseCollectionOptions(array $argv, ?string $settings = null, bool $all
       throw new RuntimeException("--blog-page must be {$expected}");
     }
   }
-  $options['settings'] ??= $settings;
   return ['help' => false] + $options;
 }
 

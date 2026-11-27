@@ -14,6 +14,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
   try {
     exit(blogTextMain($argv));
   } catch (Throwable $error) {
+    DiscordProgress::send('❌', 'ブログ本文の収集が失敗');
     fwrite(STDERR, $error->getMessage() . PHP_EOL);
     exit(1);
   }
@@ -21,13 +22,14 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 
 function blogTextMain(array $argv): int
 {
-  $options = parseCollectionOptions($argv, dirname(__DIR__) . '/settings.json');
+  $options = parseCollectionOptions($argv, allowSettings: true);
   if ($options['help']) {
     fwrite(STDOUT, "Usage: php src/get_blogtext.php [--settings=PATH] [--blog-id=ID [--blog-page=PAGE]]\n");
     return 0;
   }
 
-  $settings = readEntries($options['settings']);
+  DiscordProgress::start(__FILE__, 'ブログ本文の収集を開始', $options['settings']);
+  $settings = readEntries($options['settings'] ?? aggregatorSettingsPath());
   $blogs = readEntryGroup($settings['CONTENTS'] ?? [], 'blogs');
   if ($options['blog-id'] !== null) {
     $blog = selectBlog($blogs, $options['blog-id']);
@@ -39,6 +41,7 @@ function blogTextMain(array $argv): int
     $blogs = array_filter($blogs, static fn(array $blog): bool => ($blog['engine'] ?? null) === 'hatenablog');
   }
   if ($blogs === []) {
+    DiscordProgress::send('ℹ️', '対象のブログフィードなし');
     fwrite(STDOUT, "No hatenablog feeds configured.\n");
     return 0;
   }
@@ -64,17 +67,22 @@ function blogTextMain(array $argv): int
     $sourceId = '(unknown)';
     try {
       $sourceId = readSourceId($blog, 'blogs');
+      DiscordProgress::send('📥', 'ブログ本文を取得中', DiscordProgress::label($sourceId));
       $url = blogFeedUrl($blog, $options['blog-page']);
       $body = @file_get_contents($url, false, $context);
       if ($body === false) {
         throw new RuntimeException('Failed to fetch the configured feed');
       }
-      $saved += saveBlogText($db, $update, parseBlogFeed($body), $sourceId);
+      $count = saveBlogText($db, $update, parseBlogFeed($body), $sourceId);
+      $saved += $count;
+      DiscordProgress::send('💾', 'ブログ本文のDB保存完了', DiscordProgress::label($sourceId) . "｜{$count} 件");
     } catch (Throwable $error) {
       $failed++;
+      DiscordProgress::send('❌', 'ブログ本文の取得・保存が失敗', DiscordProgress::label($sourceId));
       fwrite(STDERR, "Blog text collection failed [{$sourceId}]: {$error->getMessage()}\n");
     }
   }
+  DiscordProgress::send($failed === 0 ? '✅' : '⚠️', 'ブログ本文の収集結果', "保存 {$saved} 件・失敗 {$failed} フィード");
   fwrite(STDOUT, "Saved blog texts: {$saved} / Failed feeds: {$failed}\n");
   return $failed === 0 ? 0 : 1;
 }

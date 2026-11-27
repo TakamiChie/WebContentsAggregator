@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-function writeArticlesToDatabase(string $databaseFile, array $articles, bool $includeFulltext = false): void
+function writeArticlesToDatabase(string $databaseFile, array $articles, bool $includeFulltext = false): array
 {
   if (!extension_loaded('pdo_sqlite')) {
     throw new RuntimeException('PDO SQLite extension is unavailable');
@@ -32,14 +32,19 @@ function writeArticlesToDatabase(string $databaseFile, array $articles, bool $in
       . ':source_id, :content_id' . ($includeFulltext ? ', :fulltext' : '') . ')'
       . articleUpsertClause($extraColumns)
     );
+    $changedTitles = [];
     foreach ($articles as $article) {
       $row = articleRow($article);
       if ($includeFulltext) {
         $row[':fulltext'] = $article['fulltext'];
       }
       $statement->execute($row);
+      if ($statement->rowCount() > 0) {
+        $changedTitles[] = $article['title'];
+      }
     }
     $pdo->commit();
+    return $changedTitles;
   } catch (Throwable $error) {
     if (isset($pdo) && $pdo->inTransaction()) {
       $pdo->rollBack();

@@ -5,12 +5,11 @@ declare(strict_types=1);
 require_once __DIR__ . '/collection_settings.php';
 require_once __DIR__ . '/tools/blog_notion.php';
 
-const ENTRIES_FILE = __DIR__ . '/../settings.json';
 const YOUTUBE_FEED_UNAVAILABLE = 75;
 
 try {
   main($argv);
-} catch (RuntimeException | JsonException $error) {
+} catch (Throwable $error) {
   fail($error->getMessage());
 }
 
@@ -22,13 +21,15 @@ function main(array $argv): void
     return;
   }
 
-  $entries = readEntries(ENTRIES_FILE);
+  DiscordProgress::start(__FILE__, '配信元からの記事取得を開始');
+  $entries = readEntries(aggregatorSettingsPath());
   $databaseFile = resolveOutputPath(readString($entries, 'OUTPUT_PATH', 'configuration'));
   $databaseOption = '--database=' . $databaseFile;
   if ($options['blog-id'] !== null) {
     $blog = selectBlog(readEntryGroup($entries['CONTENTS'], 'blogs'), $options['blog-id']);
     collectBlogMetadata($blog, $databaseFile, $options['blog-page']);
     fwrite(STDOUT, "Processed blog {$options['blog-id']} in SQLite: {$databaseFile}\n");
+    DiscordProgress::send('✅', '指定ブログの処理完了', DiscordProgress::label($options['blog-id']));
     return;
   }
   $processed = 0;
@@ -61,6 +62,7 @@ function main(array $argv): void
     }
   }
 
+  DiscordProgress::send('✅', '配信元の処理完了', "処理 {$processed} 件・取得できなかった YouTube フィード {$skipped} 件");
   fwrite(
     STDOUT,
     sprintf(
@@ -137,6 +139,7 @@ function runPhpScript(
 
 function fail(string $message, int $exitCode = 1): never
 {
+  DiscordProgress::send('❌', '記事収集バッチが失敗', "終了コード {$exitCode}。詳細は実行ログを参照してください。");
   fwrite(STDERR, "Error: {$message}\n");
   exit($exitCode);
 }

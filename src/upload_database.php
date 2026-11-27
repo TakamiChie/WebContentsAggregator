@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-const UPLOAD_SETTINGS_FILE = __DIR__ . '/../settings.json';
+require_once __DIR__ . '/discord_progress.php';
 
 if (!defined('UPLOAD_DATABASE_NO_MAIN')) {
   main();
@@ -11,7 +11,8 @@ if (!defined('UPLOAD_DATABASE_NO_MAIN')) {
 function main(): void
 {
   try {
-    $settings = uploadReadSettings(UPLOAD_SETTINGS_FILE);
+    DiscordProgress::start(__FILE__, 'SQLite のエクスポート・アップロードを開始');
+    $settings = uploadReadSettings(aggregatorSettingsPath());
     $database = uploadResolvePath(uploadRequiredString($settings, 'OUTPUT_PATH'));
     $exportDirectory = uploadResolvePath(uploadRequiredString($settings, 'SQL_EXPORT_DIR'));
     $uploadSettings = uploadRequiredObject($settings, 'DATABASE_UPLOAD');
@@ -37,9 +38,13 @@ function main(): void
 
     try {
       uploadCreateSnapshot($database, $snapshot);
+      DiscordProgress::send('📦', 'SQLite スナップショット作成完了');
       $sqlFile = uploadExportArticles($snapshot, $exportDirectory);
       fwrite(STDOUT, "Exported ARTICLE SQL to {$sqlFile}\n");
+      DiscordProgress::send('📄', '記事テーブルのSQL出力完了', DiscordProgress::label(basename($sqlFile)));
+      DiscordProgress::send('📤', 'SQLite スナップショットを転送中');
       uploadFile($snapshot, $url, $uploadSettings);
+      DiscordProgress::send('✅', 'SQLite のアップロード完了', filesize($snapshot) . ' バイト');
       fwrite(STDOUT, sprintf("Uploaded SQLite database (%d bytes) to %s\n", filesize($snapshot), uploadSafeUrl($url)));
     } finally {
       if (is_file($snapshot)) {
@@ -47,6 +52,7 @@ function main(): void
       }
     }
   } catch (Throwable $error) {
+    DiscordProgress::send('❌', 'SQLite のエクスポート・アップロードが失敗');
     fwrite(STDERR, "Database upload failed: {$error->getMessage()}\n");
     exit(1);
   }

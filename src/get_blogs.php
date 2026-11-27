@@ -11,7 +11,8 @@ if (PHP_SAPI !== 'cli') {
 
 try {
   exit(collectBlogPages($argv));
-} catch (RuntimeException $error) {
+} catch (Throwable $error) {
+  DiscordProgress::send('❌', 'ブログのページ範囲取得が失敗');
   fwrite(STDERR, "Error: {$error->getMessage()}\n");
   exit(1);
 }
@@ -24,6 +25,7 @@ function collectBlogPages(array $argv): int
     return 0;
   }
 
+  DiscordProgress::start(__FILE__, 'ブログのページ範囲取得を開始');
   $blogId = $options['blog-id'];
   $pageRange = $options['blog-page'];
   if ($blogId === null || $pageRange === null) {
@@ -38,6 +40,7 @@ function collectBlogPages(array $argv): int
   }
 
   for ($page = $firstPage; ; $page++) {
+    DiscordProgress::send('📄', 'ブログのページを処理中', DiscordProgress::label($blogId) . "｜ページ {$page}");
     fwrite(STDOUT, "Processing blog {$blogId}, page {$page}\n");
 
     foreach (['generate_all.php', 'get_blogtext.php'] as $script) {
@@ -48,6 +51,7 @@ function collectBlogPages(array $argv): int
       }
       $status = proc_close($process);
       if ($status !== 0) {
+        DiscordProgress::send('❌', 'ブログのページ処理が失敗', "ページ {$page}｜{$script}｜終了コード {$status}");
         fwrite(STDERR, "Failed: {$script} for blog {$blogId}, page {$page} (exit {$status})\n");
         return $status > 0 ? $status : 1;
       }
@@ -57,6 +61,7 @@ function collectBlogPages(array $argv): int
     }
   }
 
+  DiscordProgress::send('✅', 'ブログのページ範囲取得が完了', "ページ {$firstPage}〜{$lastPage}");
   fwrite(STDOUT, "Completed blog {$blogId}, pages {$firstPage}-{$lastPage}\n");
   return 0;
 }

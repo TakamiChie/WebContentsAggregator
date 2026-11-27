@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/webvtt.php';
 require_once __DIR__ . '/tools/notion_api.php';
+require_once __DIR__ . '/discord_progress.php';
 
-const NOTION_UPLOAD_SETTINGS_FILE = __DIR__ . '/../settings.json';
 const NOTION_UPLOAD_HASH_VERSION = 3;
 const NOTION_UPLOAD_SOURCES = ['takamichie', 'takamichie_gameonly'];
 
@@ -18,6 +18,7 @@ if (!defined('UPLOAD_NOTION_NO_MAIN')) {
   try {
     exit(notionMain($argv));
   } catch (Throwable $error) {
+    DiscordProgress::send('❌', 'Notion アップロードバッチが失敗');
     fwrite(STDERR, "Notion upload failed: {$error->getMessage()}\n");
     exit(1);
   }
@@ -40,13 +41,14 @@ function notionMain(array $argv): int
     return 0;
   }
 
+  DiscordProgress::start(__FILE__, $options['dry_run'] ? 'Notion 同期対象の確認を開始' : 'Notion への記事同期を開始', $options['settings']);
   foreach (['pdo_sqlite', 'curl'] as $extension) {
     if (!extension_loaded($extension)) {
       throw new RuntimeException("Required PHP extension is unavailable: {$extension}");
     }
   }
 
-  $settingsPath = $options['settings'] ?? NOTION_UPLOAD_SETTINGS_FILE;
+  $settingsPath = $options['settings'] ?? aggregatorSettingsPath();
   $settings = notionReadJson($settingsPath);
   $configuration = notionConfiguration($settings);
   $database = $options['database'] ?? notionResolvePath(notionRequiredString($settings, 'OUTPUT_PATH'));
@@ -87,17 +89,24 @@ function notionMain(array $argv): int
     }
 
     try {
+      $title = DiscordProgress::label((string)$article['title']);
+      DiscordProgress::send('📤', '記事を Notion に同期中', $title);
       fwrite(STDERR, "Uploading [{$article['content_id']}] {$article['title']}\n");
       $result = notionUploadArticle($article, $configuration, $token);
       notionRememberSync($db, $article['content_id'], $hash, $result['id'], $result['url']);
       fwrite(STDOUT, ($result['created'] ? 'Created' : 'Updated') . " Notion page: {$result['url']}\n");
+      DiscordProgress::send('✅', $result['created'] ? 'Notion ページを作成' : 'Notion ページを更新', $title);
       $uploaded++;
     } catch (Throwable $error) {
+      DiscordProgress::send('❌', '記事の Notion 同期が失敗', DiscordProgress::label((string)$article['content_id']));
       fwrite(STDERR, "Upload failed [{$article['content_id']}]: {$error->getMessage()}\n");
       $failed++;
     }
   }
 
+  $completed = $options['dry_run'] ? '同期候補' : '同期';
+  DiscordProgress::send($failed === 0 ? '✅' : '⚠️', 'Notion 同期の実行結果',
+    "{$completed} {$uploaded} 件・スキップ {$skipped} 件・失敗 {$failed} 件");
   $completedLabel = $options['dry_run'] ? 'Selected' : 'Uploaded';
   fwrite(STDERR, "{$completedLabel}: {$uploaded} / Skipped: {$skipped} / Failed: {$failed}\n");
   return $failed === 0 ? 0 : 1;

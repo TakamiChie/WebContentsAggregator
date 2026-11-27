@@ -7,13 +7,17 @@ require_once __DIR__ . '/summarize.php';
 
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
   try { exit(classifyMain($argv)); }
-  catch (Throwable $error) { fwrite(STDERR, $error->getMessage() . "\n"); exit(1); }
+  catch (Throwable $error) {
+    DiscordProgress::send('❌', 'トピック分類バッチが失敗');
+    fwrite(STDERR, $error->getMessage() . "\n");
+    exit(1);
+  }
 }
 
 function classifyOptions(array $argv): array
 {
   $options = ['content' => null, 'nodb' => false, 'force' => false, 'all-types' => false,
-    'analyze' => false, 'limit' => 0, 'top' => 30, 'settings' => __DIR__ . '/../settings.json', 'help' => false];
+    'analyze' => false, 'limit' => 0, 'top' => 30, 'settings' => null, 'help' => false];
   for ($i = 1; $i < count($argv); $i++) {
     $arg = $argv[$i];
     if ($arg === '-h' || $arg === '--help') { $options['help'] = true; continue; }
@@ -57,11 +61,13 @@ function classifyMain(array $argv): int
       . "No AI or transcript processing; existing summary rejects incidental mentions.\n");
     return 0;
   }
+  $settingsPath = $options['settings'] === null ? null : summarizePath($options['settings'], 'settings');
+  DiscordProgress::start(__FILE__, $options['analyze'] ? 'トピック分布の分析を開始' : 'トピック分類を開始', $settingsPath);
   foreach (['pdo_sqlite', 'mbstring', 'intl'] as $extension) {
     if (!extension_loaded($extension)) { throw new RuntimeException("The PHP {$extension} extension is required"); }
   }
   require_once __DIR__ . '/../vendor/autoload.php';
-  $settings = json_decode(summarizeRead(summarizePath($options['settings'], 'settings')), true, 512, JSON_THROW_ON_ERROR);
+  $settings = json_decode(summarizeRead($settingsPath ?? aggregatorSettingsPath()), true, 512, JSON_THROW_ON_ERROR);
   if (!is_array($settings)) { throw new RuntimeException('Settings must be an object'); }
   $catalog = classifyCatalog(summarizePath($settings['TAG_COLLECTION_DIR'] ?? null, 'TAG_COLLECTION_DIR'));
   $database = summarizePath($settings['OUTPUT_PATH'] ?? null, 'OUTPUT_PATH');
@@ -299,6 +305,7 @@ function classifyRun(PDO $db, array $options, array $catalog): int
   if ($rows === [] && $options['content'] !== null) { throw new RuntimeException('Article not found for the selected source type'); }
   if ($options['analyze']) {
     fwrite(STDOUT, json_encode(classifyDistribution($rows, $catalog, $options['top']), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n");
+    DiscordProgress::send('✅', 'トピック分布の分析が完了', count($rows) . ' 記事');
     return 0;
   }
   $policy = hash('sha256', summarizeJson(['version' => 'tags_summary_relevance_v3', 'catalog' => $catalog]));
@@ -362,10 +369,17 @@ function classifyRun(PDO $db, array $options, array $catalog): int
         $error = $exception->getMessage();
       }
     }
-    if ($error !== null) { $failed++; fwrite(STDERR, "Failed [{$id}]: {$error}\n"); }
+    if ($error !== null) {
+      $failed++;
+      DiscordProgress::send('❌', '記事のトピック分類が失敗', DiscordProgress::label((string)$id));
+      fwrite(STDERR, "Failed [{$id}]: {$error}\n");
+    }
     elseif ($result['status'] === 'pending') { $missing++; }
     else { $saved++; }
   }
+  $completed = $options['nodb'] ? 'プレビュー' : '分類完了';
+  DiscordProgress::send($failed === 0 ? '✅' : '⚠️', 'トピック分類の実行結果',
+    "{$completed} {$saved} 件・タグ待ち {$missing} 件・失敗 {$failed} 件・スキップ {$skipped} 件");
   fwrite(STDERR, "Complete: {$saved} / Missing tags: {$missing} / Failed: {$failed} / Skipped: {$skipped} / AI calls: 0\n");
   return $failed === 0 ? 0 : 1;
 }

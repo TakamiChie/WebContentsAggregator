@@ -1,4 +1,5 @@
 {
+  "DISCORD_WEBHOOK_URL": "",
   "OUTPUT_PATH": "",
   "SQL_EXPORT_DIR": "",
   "DATABASE_UPLOAD": {

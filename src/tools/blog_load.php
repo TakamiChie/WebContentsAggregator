@@ -4,125 +4,167 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/blog_feed.php';
 require_once __DIR__ . '/blog_article.php';
+require_once __DIR__ . '/../discord_progress.php';
 
 const DEFAULT_DATABASE_FILE = __DIR__ . '/../../../user/data/mediadata.sqlite3';
 
-$options = parseArguments($argv);
-$atomUrl = $options['feed_url'];
-
-$feedContent = @file_get_contents($atomUrl);
-if ($feedContent === false) {
-  fail("Failed to fetch blog feed: {$atomUrl}");
-}
-
 try {
-  $xml = parseBlogFeed($feedContent);
-} catch (RuntimeException $error) {
+  main($argv);
+} catch (Throwable $error) {
   fail($error->getMessage());
 }
-$rootName = $xml->getName();
 
-$articles = [];
-$siteTitle = 'Unknown Site';
-$siteSubtitle = '';
-$siteUrl = '';
+function main(array $argv): void
+{
+  $options = parseArguments($argv);
+  DiscordProgress::start(__FILE__, 'ブログフィードの取得を開始');
+  $atomUrl = $options['feed_url'];
 
-if ($rootName === 'feed') {
-  // Atom
-  $siteTitle = isset($xml->title) ? trim((string)$xml->title) : 'Unknown Site';
-  $siteSubtitle = isset($xml->subtitle) ? trim((string)$xml->subtitle) : '';
-  $siteUrl = findAtomLinkHref($xml, 'alternate') ?: findAtomLinkHref($xml, null);
-
-  foreach ($xml->entry as $entry) {
-    $identity = blogEntryIdentity($entry, $options['source_id'], true);
-    $summary = isset($entry->summary) ? trim((string)$entry->summary) : '';
-    if (containsHtml($summary)) {
-      $summary = htmlToText($summary);
-    }
-    $summary = html_entity_decode($summary, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    $hashtags = extractHashtags($summary);
-
-    $articles[] = $identity + [
-      'published_at' => formatDateToJst($identity['pub_date']),
-      'cover_art' => findAtomLinkHref($entry, 'enclosure', 'image/') ?: findAtomLinkHref($entry, 'enclosure'),
-      'summary' => $summary,
-      'hashtags' => $hashtags,
-      'source_id' => $options['source_id'],
-    ];
+  $feedContent = @file_get_contents($atomUrl);
+  if ($feedContent === false) {
+    fail("Failed to fetch blog feed: {$atomUrl}");
   }
-} else {
-  // RSS 2.0
-  $channel = $xml->channel;
-  $siteTitle = isset($channel->title) ? trim((string)$channel->title) : 'Unknown Site';
-  $siteSubtitle = isset($channel->description) ? trim((string)$channel->description) : '';
-  $siteUrl = isset($channel->link) ? trim((string)$channel->link) : '';
 
-  $namespaces = $xml->getNamespaces(true);
+  $xml = parseBlogFeed($feedContent);
+  $rootName = $xml->getName();
 
-  foreach ($channel->item as $item) {
-    $identity = blogEntryIdentity($item, $options['source_id'], false);
-    $coverArt = '';
-    if (isset($item->enclosure)) {
-      foreach ($item->enclosure as $enclosure) {
-        $attrs = $enclosure->attributes();
-        $enclosureType = strtolower(trim((string)($attrs['type'] ?? '')));
-        $enclosureUrl = trim((string)($attrs['url'] ?? ''));
-        if (str_starts_with($enclosureType, 'image/') && $enclosureUrl !== '') {
-          $coverArt = $enclosureUrl;
-          break;
+  $articles = [];
+  $siteTitle = 'Unknown Site';
+  $siteSubtitle = '';
+  $siteUrl = '';
+
+  if ($rootName === 'feed') {
+    // Atom
+    $siteTitle = isset($xml->title) ? trim((string)$xml->title) : 'Unknown Site';
+    $siteSubtitle = isset($xml->subtitle) ? trim((string)$xml->subtitle) : '';
+    $siteUrl = findAtomLinkHref($xml, 'alternate') ?: findAtomLinkHref($xml, null);
+
+    foreach ($xml->entry as $entry) {
+      $identity = blogEntryIdentity($entry, $options['source_id'], true);
+      $summary = isset($entry->summary) ? trim((string)$entry->summary) : '';
+      if (containsHtml($summary)) {
+        $summary = htmlToText($summary);
+      }
+      $summary = html_entity_decode($summary, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+      $hashtags = extractHashtags($summary);
+
+      $articles[] = $identity + [
+        'published_at' => formatDateToJst($identity['pub_date']),
+        'cover_art' => findAtomLinkHref($entry, 'enclosure', 'image/') ?: findAtomLinkHref($entry, 'enclosure'),
+        'summary' => $summary,
+        'hashtags' => $hashtags,
+        'source_id' => $options['source_id'],
+      ];
+    }
+  } else {
+    // RSS 2.0
+    $channel = $xml->channel;
+    $siteTitle = isset($channel->title) ? trim((string)$channel->title) : 'Unknown Site';
+    $siteSubtitle = isset($channel->description) ? trim((string)$channel->description) : '';
+    $siteUrl = isset($channel->link) ? trim((string)$channel->link) : '';
+
+    $namespaces = $xml->getNamespaces(true);
+
+    foreach ($channel->item as $item) {
+      $identity = blogEntryIdentity($item, $options['source_id'], false);
+      $coverArt = '';
+      if (isset($item->enclosure)) {
+        foreach ($item->enclosure as $enclosure) {
+          $attrs = $enclosure->attributes();
+          $enclosureType = strtolower(trim((string)($attrs['type'] ?? '')));
+          $enclosureUrl = trim((string)($attrs['url'] ?? ''));
+          if (str_starts_with($enclosureType, 'image/') && $enclosureUrl !== '') {
+            $coverArt = $enclosureUrl;
+            break;
+          }
         }
       }
-    }
 
-    if ($coverArt === '' && isset($namespaces['media'])) {
-      $media = $item->children($namespaces['media']);
-      if (isset($media->content)) {
-        $attrs = $media->content->attributes();
-        if (isset($attrs['url'])) {
-          $coverArt = (string)$attrs['url'];
+      if ($coverArt === '' && isset($namespaces['media'])) {
+        $media = $item->children($namespaces['media']);
+        if (isset($media->content)) {
+          $attrs = $media->content->attributes();
+          if (isset($attrs['url'])) {
+            $coverArt = (string)$attrs['url'];
+          }
+        }
+        if ($coverArt === '' && isset($media->thumbnail)) {
+          $attrs = $media->thumbnail->attributes();
+          $coverArt = (string)($attrs['url'] ?? '');
+          if ($coverArt === '') {
+            $coverArt = trim((string)$media->thumbnail);
+          }
         }
       }
-      if ($coverArt === '' && isset($media->thumbnail)) {
-        $attrs = $media->thumbnail->attributes();
-        $coverArt = (string)($attrs['url'] ?? '');
-        if ($coverArt === '') {
-          $coverArt = trim((string)$media->thumbnail);
-        }
+
+      $summary = isset($item->description) ? trim((string)$item->description) : '';
+      if (containsHtml($summary)) {
+        $summary = htmlToText($summary);
       }
-    }
+      $summary = html_entity_decode($summary, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+      $hashtags = extractHashtags($summary);
 
-    $summary = isset($item->description) ? trim((string)$item->description) : '';
-    if (containsHtml($summary)) {
-      $summary = htmlToText($summary);
+      $articles[] = $identity + [
+        'published_at' => formatDateToJst($identity['pub_date']),
+        'cover_art' => $coverArt,
+        'summary' => $summary,
+        'hashtags' => $hashtags,
+        'source_id' => $options['source_id'],
+      ];
     }
-    $summary = html_entity_decode($summary, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    $hashtags = extractHashtags($summary);
-
-    $articles[] = $identity + [
-      'published_at' => formatDateToJst($identity['pub_date']),
-      'cover_art' => $coverArt,
-      'summary' => $summary,
-      'hashtags' => $hashtags,
-      'source_id' => $options['source_id'],
-    ];
   }
-}
 
-$jsonData = [
-  'source_id' => $options['source_id'],
-  'site_title' => $siteTitle,
-  'site_subtitle' => $siteSubtitle,
-  'site_url' => $siteUrl,
-  'episodes' => $articles,
-];
+  $jsonData = [
+    'source_id' => $options['source_id'],
+    'site_title' => $siteTitle,
+    'site_subtitle' => $siteSubtitle,
+    'site_url' => $siteUrl,
+    'episodes' => $articles,
+  ];
 
-$json = json_encode(
-  $jsonData,
-  JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT
-);
+  $json = json_encode(
+    $jsonData,
+    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT
+  );
 
-if ($json === false) {
-  fail('Failed to generate JSON: ' . json_last_error_msg());
+  if ($json === false) {
+    fail('Failed to generate JSON: ' . json_last_error_msg());
+  }
+
+  if ($options['mode'] === 'sql') {
+    $sql = buildSqlScript($articles);
+    if ($options['sql_output'] === null) {
+      fwrite(STDOUT, $sql);
+    } elseif (file_put_contents($options['sql_output'], $sql) === false) {
+      fail("Failed to write SQL file: {$options['sql_output']}");
+    } else {
+      fwrite(STDOUT, $json . PHP_EOL);
+      fwrite(STDERR, "SQL file generated: {$options['sql_output']}\n");
+    }
+    DiscordProgress::send('📄', 'ブログ記事のSQL生成完了', count($articles) . ' 件');
+    return;
+  }
+
+  if ($options['mode'] === 'write') {
+    $changed = writeArticlesToDatabase($options['database'], $articles);
+    DiscordProgress::articles($siteTitle . '｜' . $options['source_id'], count($articles), $changed);
+    fwrite(
+      STDERR,
+      count($articles) . " records written to SQLite: {$options['database']}\n"
+    );
+  }
+
+  fwrite(STDOUT, $json . PHP_EOL);
+
+  if ($options['json_output'] !== null) {
+    if (file_put_contents($options['json_output'], $json . PHP_EOL) === false) {
+      fail("Failed to write JSON file: {$options['json_output']}");
+    }
+    fwrite(STDERR, "JSON file generated: {$options['json_output']}\n");
+  }
+  if ($options['mode'] === 'dry-run') {
+    DiscordProgress::send('🔎', 'ブログ記事の取得プレビュー完了', count($articles) . ' 件');
+  }
 }
 
 function formatDateToJst(string $date): string
@@ -139,40 +181,6 @@ function formatDateToJst(string $date): string
   } catch (Exception $exception) {
     return '';
   }
-}
-
-if ($options['mode'] === 'sql') {
-  $sql = buildSqlScript($articles);
-  if ($options['sql_output'] === null) {
-    fwrite(STDOUT, $sql);
-  } elseif (file_put_contents($options['sql_output'], $sql) === false) {
-    fail("Failed to write SQL file: {$options['sql_output']}");
-  } else {
-    fwrite(STDOUT, $json . PHP_EOL);
-    fwrite(STDERR, "SQL file generated: {$options['sql_output']}\n");
-  }
-  exit(0);
-}
-
-if ($options['mode'] === 'write') {
-  try {
-    writeArticlesToDatabase($options['database'], $articles);
-  } catch (RuntimeException $error) {
-    fail($error->getMessage());
-  }
-  fwrite(
-    STDERR,
-    count($articles) . " records written to SQLite: {$options['database']}\n"
-  );
-}
-
-fwrite(STDOUT, $json . PHP_EOL);
-
-if ($options['json_output'] !== null) {
-  if (file_put_contents($options['json_output'], $json . PHP_EOL) === false) {
-    fail("Failed to write JSON file: {$options['json_output']}");
-  }
-  fwrite(STDERR, "JSON file generated: {$options['json_output']}\n");
 }
 
 function parseArguments(array $argv): array
@@ -282,6 +290,7 @@ function sqlLiteral(mixed $value): string
 
 function fail(string $message): never
 {
+  DiscordProgress::send('❌', 'ブログ記事の取得・保存が失敗');
   fwrite(STDERR, $message . PHP_EOL);
   exit(1);
 }

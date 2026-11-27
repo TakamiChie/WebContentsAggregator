@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/webvtt.php';
+require_once __DIR__ . '/discord_progress.php';
 
 // Required ARTICLE columns (apply manually; see doc/SUMMARIZE.md):
 // llm_summary TEXT DEFAULT NULL, llm_tags TEXT DEFAULT NULL, llm_hashtags TEXT DEFAULT NULL.
@@ -15,6 +16,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
   try {
     exit(summarizeMain($argv));
   } catch (Throwable $error) {
+    DiscordProgress::send('❌', '概要生成バッチが失敗');
     fwrite(STDERR, $error->getMessage() . "\n");
     exit(1);
   }
@@ -35,13 +37,14 @@ function summarizeMain(array $argv): int
       . "Configuration: settings.json; required schema: doc/SUMMARIZE.md\n");
     return 0;
   }
+  DiscordProgress::start(__FILE__, $options['nodb'] ? '概要プレビューの生成を開始' : '概要生成を開始');
   foreach (['pdo_sqlite', 'curl'] as $extension) {
     if (!extension_loaded($extension)) {
       throw new RuntimeException("The PHP {$extension} extension is required");
     }
   }
   require_once __DIR__ . '/../vendor/autoload.php';
-  $settings = json_decode(summarizeRead(__DIR__ . '/../settings.json'), true, 512, JSON_THROW_ON_ERROR);
+  $settings = json_decode(summarizeRead(aggregatorSettingsPath()), true, 512, JSON_THROW_ON_ERROR);
   if (!is_array($settings)) {
     throw new RuntimeException('settings.json must contain an object');
   }
@@ -419,6 +422,7 @@ function summarizeArticles(PDO $db, array $options, array $allowed, callable $ge
     . ($latestUnsummarized ? " AND {$needsSummary}" : ''));
   $processed = 0;
   $failed = 0;
+  $skipped = 0;
   $cooldown = $options['cooldown'] ?? 20;
   $wait ??= static function (int $seconds): void { sleep($seconds); };
   foreach ($ids as $id) {
@@ -430,10 +434,12 @@ function summarizeArticles(PDO $db, array $options, array $allowed, callable $ge
         throw new RuntimeException('Article was removed during processing');
       }
       if ($latestUnsummarized && (trim($row['llm_summary'] ?? '') !== '' || trim($row['fulltext'] ?? '') === '')) {
+        $skipped++;
         fwrite(STDERR, "Skipping [{$id}]: no longer eligible for summarization\n");
         continue;
       }
       if (!$options['nodb'] && trim($row['llm_summary'] ?? '') !== '' && trim($row['llm_tags'] ?? '') !== '') {
+        $skipped++;
         fwrite(STDERR, "Skipping [{$id}]: llm_summary and llm_tags already populated\n");
         continue;
       }
@@ -442,6 +448,8 @@ function summarizeArticles(PDO $db, array $options, array $allowed, callable $ge
         $wait($cooldown);
       }
       fwrite(STDERR, "Summarizing [{$id}] {$row['title']}\n");
+      $title = DiscordProgress::label((string)$row['title']);
+      DiscordProgress::send('✍️', '記事の概要を生成中', $title);
       $result = summarizeValidate($generate($row), $allowed);
       if ($update !== null) {
         $parameters = [
@@ -459,12 +467,23 @@ function summarizeArticles(PDO $db, array $options, array $allowed, callable $ge
       } else {
         fwrite(STDOUT, summarizeJson(['content_id' => $id] + $result) . "\n");
       }
+      $detail = '**' . $title . "**\n" . $result['summary'];
+      foreach (['tags' => 'タグ', 'hashtags' => 'ハッシュタグ'] as $key => $label) {
+        if ($result[$key] !== []) {
+          $detail .= "\n**{$label}** " . implode('、', array_map([DiscordProgress::class, 'label'], $result[$key]));
+        }
+      }
+      DiscordProgress::send('📝', $update === null ? '概要プレビューの生成完了' : '概要生成・DB保存完了', $detail);
       $processed++;
     } catch (Throwable $error) {
       $failed++;
+      DiscordProgress::send('❌', '記事の概要生成・保存が失敗', DiscordProgress::label((string)$id));
       fwrite(STDERR, "Generation/save failed [{$id}]: {$error->getMessage()}\n");
     }
   }
+  $completed = $options['nodb'] ? '生成' : '保存';
+  DiscordProgress::send($failed === 0 ? '✅' : '⚠️', '概要生成の実行結果',
+    "{$completed} {$processed} 件・スキップ {$skipped} 件・失敗 {$failed} 件");
   fwrite(STDERR, ($options['nodb'] ? 'Generated: ' : 'Saved: ') . "{$processed} / Failed: {$failed}\n");
   return $failed === 0 ? 0 : 1;
 }
